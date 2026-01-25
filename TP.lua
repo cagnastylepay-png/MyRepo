@@ -209,7 +209,8 @@ function connectWS()
             elseif msg.Method == "MoveTo" then
                 -- On utilise task.spawn pour ne pas bloquer le WebSocket pendant le trajet
                 task.spawn(function()                  
-                    MoveTo(Vector3.new(msg.Data.X, msg.Data.Y, msg.Data.Z))
+                    local targetPos = Vector3.new(msg.Data.X, msg.Data.Y, msg.Data.Z)
+                    MoveTo(targetPos)
                     ws:Send(HttpService:JSONEncode({
                         Method = "Result",
                         From = myName,

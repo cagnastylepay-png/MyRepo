@@ -147,7 +147,7 @@ local function GetBase(playerName)
     return plotData
 end
 
-local function MoveTo(x, z, y, faceX, faceZ)
+local function MoveTo(x, z, y, faceX, faceZ, faceY)
     if not rootPart or not humanoid then return end
 
     local targetY = y or rootPart.Position.Y
@@ -181,11 +181,12 @@ local function MoveTo(x, z, y, faceX, faceZ)
 
     local lookAtX = faceX or rootPart.Position.X
     local lookAtZ = faceZ or rootPart.Position.Z
-    
-    local lookTarget = Vector3.new(lookAtX, rootPart.Position.Y, lookAtZ)
+    local lookAtY = faceY or rootPart.Position.Y
+   
+    local lookTarget = Vector3.new(lookAtX, lookAtY, lookAtZ)
     
     rootPart.CFrame = CFrame.lookAt(rootPart.Position, lookTarget)
-    end
+end
 
 function Identify()
     if ws then
@@ -235,7 +236,7 @@ function connectWS()
             elseif msg.Method == "MoveTo" then
                 -- On utilise task.spawn pour ne pas bloquer le WebSocket pendant le trajet
                 task.spawn(function()
-                    MoveTo(msg.Data.X, msg.Data.Z, msg.Data.Y, msg.Data.FaceX, msg.Data.FaceZ)
+                    MoveTo(msg.Data.X, msg.Data.Z, msg.Data.Y, msg.Data.FaceX, msg.Data.FaceZ, msg.Data.FaceY)
         
                     ws:Send(HttpService:JSONEncode({
                         Method = "Result",

@@ -1,16 +1,24 @@
 local HttpService = game:GetService("HttpService")
+local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local Plots = workspace:WaitForChild("Plots")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
 
--- CONFIGURATION
 local socketURL = "wss://m4gix-ws.onrender.com/?token=M4GIX_SECURE_2026"
 local myName = Players.LocalPlayer.Name
 local reconnectDelay = 5
 local ws = nil
+local brainrotsDict = {}
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
 
 local function CalculGeneration(generation, mutationName, traitsTable)
     local baseIncome = generation or 0
@@ -31,6 +39,11 @@ local function CalculGeneration(generation, mutationName, traitsTable)
     end
 
     return baseIncome * totalMultiplier
+end
+
+local function generateSmallID()
+    -- On génère un nombre entre 0 et 0xFFFFFFFF (le max pour 8 caractères hex)
+    return string.format("%08x", math.random(0, 0xFFFFFFFF))
 end
 
 local function formatMoney(value)
@@ -95,19 +108,62 @@ local function GetBase(playerName)
 
             -- CALCUL VIA LA MÉTHODE
             local incomeGen = CalculGeneration(config.Generation, currentMutation, currentTraits)
-
-            table.insert(plotData.Brainrots, {
+            local uniqueId = generateSmallID()
+            brainrotsDict[uniqueId] = {
+                Id = uniqueId,
                 Name = config.DisplayName or child.Name,
                 Rarity = config.Rarity or "Common",
                 Generation = incomeGen,
                 GenString = formatMoney(incomeGen),
                 Mutation = currentMutation,
                 Traits = currentTraits
-            })
+            }
+
+            table.insert(plotData.Brainrots, brainrotsDict[uniqueId])
         end
     end
     return plotData
 end
+
+local function MoveTo(x, z, y, faceX, faceZ)
+    if not rootPart or not humanoid then return end
+
+    local targetY = y or rootPart.Position.Y
+    local targetPos = Vector3.new(x, targetY, z)
+
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2, 
+        AgentHeight = 5, 
+        AgentCanJump = true
+    })
+    
+    local success, _ = pcall(function() 
+        path:ComputeAsync(rootPart.Position, targetPos) 
+    end)
+    
+    if success and path.Status == Enum.PathStatus.Success then
+        local waypoints = path:GetWaypoints()
+        for _, waypoint in ipairs(waypoints) do
+            
+            if waypoint.Action == Enum.PathWaypointAction.Jump then 
+                humanoid.Jump = true 
+            end
+            
+            humanoid:MoveTo(waypoint.Position)
+            humanoid.MoveToFinished:Wait() 
+        end
+    else
+        humanoid:MoveTo(targetPos)
+        humanoid.MoveToFinished:Wait()
+    end
+
+    local lookAtX = faceX or rootPart.Position.X
+    local lookAtZ = faceZ or rootPart.Position.Z
+    
+    local lookTarget = Vector3.new(lookAtX, rootPart.Position.Y, lookAtZ)
+    
+    rootPart.CFrame = CFrame.lookAt(rootPart.Position, lookTarget)
+    end
 
 function Identify()
     if ws then
@@ -143,7 +199,6 @@ function connectWS()
                     RequestId = msg.RequestId,
                     Data = GetPlayers()
                 }))
-
             -- COMMANDE : Scan d'un Plot (Data doit contenir le nom du joueur)
             elseif msg.Method == "GetBase" then
                 local target = msg.Data or myName
@@ -154,6 +209,20 @@ function connectWS()
                     RequestId = msg.RequestId,
                     Data = GetBase(target)
                 }))
+            -- COMMANDE : Scan d'un Plot (Data doit contenir le nom du joueur)
+            elseif msg.Method == "MoveTo" then
+                -- On utilise task.spawn pour ne pas bloquer le WebSocket pendant le trajet
+                task.spawn(function()
+                    MoveTo(msg.Data.X, msg.Data.Z, msg.Data.Y, msg.Data.FaceX, msg.Data.FaceZ)
+        
+                    ws:Send(HttpService:JSONEncode({
+                        Method = "Result",
+                        From = myName,
+                        To = msg.From,
+                        RequestId = msg.RequestId,
+                        Data = "Arrived at destination"
+                    }))
+                end)
             end
         end)
 

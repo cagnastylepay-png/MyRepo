@@ -1,7 +1,6 @@
 local DebrisFolder = workspace:WaitForChild("Debris")
 
-local function formatCF(cf)
-    local p = cf.Position
+local function formatCF(p)
     return string.format("X: %.2f, Y: %.2f, Z: %.2f", p.X, p.Y, p.Z)
 end
 

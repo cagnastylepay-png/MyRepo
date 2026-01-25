@@ -1,51 +1,39 @@
-local BrainrotsSpawned = workspace:WaitForChild("RenderedMovingAnimals")
 local DebrisFolder = workspace:WaitForChild("Debris")
 
-local pendingAnimals = {}
-
-local function getFlatPos(cf)
-    return Vector3.new(cf.Position.X, 0, cf.Position.Z)
-end
-
--- 1. Gestion des Overheads avec attente de CFrame valide
 DebrisFolder.ChildAdded:Connect(function(child)
     if child.Name == "FastOverheadTemplate" then
-        -- BOUCLE D'ATTENTE : On attend que le CFrame ne soit plus à 0,0,0
+        
+        -- On récupère le conteneur principal
+        local overhead = child:WaitForChild("AnimalOverhead", 3)
+        if not overhead then return end
+
+        -- On récupère les labels (on utilise WaitForChild sur DisplayName car c'est le plus important)
+        local displayObj = overhead:WaitForChild("DisplayName", 3)
+        local mutationObj = overhead:FindFirstChild("Mutation") 
+        local generationObj = overhead:FindFirstChild("Generation")
+        local priceObj = overhead:FindFirstChild("Price")        
+        local rarityObj = overhead:FindFirstChild("Rarity")
+
+        -- PETITE SÉCURITÉ : On attend que le texte du nom soit répliqué
         local timeout = 0
-        while child.Position.Magnitude == 0 and timeout < 10 do
-            task.wait() -- On attend la frame suivante
+        while (displayObj and displayObj.Text == "") and timeout < 10 do
+            task.wait(0.1) 
             timeout = timeout + 1
         end
 
-        local overheadPos = getFlatPos(child.CFrame)
-        
-        -- Recherche du match dans les animaux en attente
-        for i, data in ipairs(pendingAnimals) do
-            local dist = (data.Pos - overheadPos).Magnitude
-            if dist < 1 then -- Seuil de tolérance
-                local overhead = child:WaitForChild("AnimalOverhead", 1)
-                local displayName = overhead and overhead:FindFirstChild("DisplayName")                
-                print(string.format("✅ Match! Dist: %.2f | Name: %s", dist, displayName and displayName.Text or "???"))                
-                table.remove(pendingAnimals, i)
-                return
-            end
-        end
-    end
-end)
+        if displayObj and displayObj.Text ~= "" then
+            local data = {
+                Name = displayObj.Text,
+                Mutation = mutationObj and mutationObj.Text or "Default",
+                Generation = generationObj and generationObj.Text or "1",
+                Price = priceObj and priceObj.Text or "0",
+                Rarity = rarityObj and rarityObj.Text or "Common",
+                Pos = child.Position -- Utile pour vérifier si ce n'est pas 0,0,0
+            }
 
--- 2. Gestion des Animaux
-BrainrotsSpawned.ChildAdded:Connect(function(child)
-    local root = child:WaitForChild("RootPart", 5)
-    if root then
-        -- Même logique d'attente pour l'animal si besoin
-        if root.Position.Magnitude == 0 then
-            task.wait()
+            -- Formatage propre dans la console
+            print(string.format("🐾 [DEBUG] Nom: %s | Mut: %s | Gen: %s | Prix: %s", 
+                data.Name, data.Mutation, data.Generation, data.Price))
         end
-
-        table.insert(pendingAnimals, {
-            ModelName = child.Name,
-            Pos = getFlatPos(root.CFrame),
-            FullPos = root.Position
-        })
     end
 end)

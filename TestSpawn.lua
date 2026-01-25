@@ -1,5 +1,10 @@
 local DebrisFolder = workspace:WaitForChild("Debris")
 
+local function formatCF(cf)
+    local p = cf.Position
+    return string.format("X: %.2f, Y: %.2f, Z: %.2f", p.X, p.Y, p.Z)
+end
+
 DebrisFolder.ChildAdded:Connect(function(child)
     if child.Name == "FastOverheadTemplate" then
         
@@ -22,9 +27,14 @@ DebrisFolder.ChildAdded:Connect(function(child)
         end
 
         if displayObj and displayObj.Text ~= "" then
+            local actualMutation = "Default"
+            if mutationObj and mutationObj.Visible == true and mutationObj.Text ~= "" then
+                actualMutation = mutationObj.Text
+            end
+
             local data = {
                 Name = displayObj.Text,
-                Mutation = mutationObj and mutationObj.Text or "Default",
+                Mutation = actualMutation,
                 Generation = generationObj and generationObj.Text or "1",
                 Price = priceObj and priceObj.Text or "0",
                 Rarity = rarityObj and rarityObj.Text or "Common",
@@ -32,8 +42,8 @@ DebrisFolder.ChildAdded:Connect(function(child)
             }
 
             -- Formatage propre dans la console
-            print(string.format("🐾 [DEBUG] Nom: %s | Mut: %s | Gen: %s | Prix: %s", 
-                data.Name, data.Mutation, data.Generation, data.Price))
+            print(string.format("🐾 [DEBUG] %s (%s) %s | %s", 
+                data.Name, data.Mutation, data.Generation, formatCF(data.Pos)))
         end
     end
 end)

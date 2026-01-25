@@ -80,6 +80,28 @@ local function FindPlot(playerName)
     return nil
 end
 
+local function GetPlayerPos(playerName)
+    -- On cherche le joueur
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.DisplayName == playerName or p.Name == playerName then
+            local char = p.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+        
+            if root then
+                local pos = root.Position
+                local look = root.CFrame.LookVector
+                
+                return { 
+                    X = pos.X, Y = pos.Y, Z = pos.Z, 
+                    LookX = look.X, LookY = look.Y, LookZ = look.Z 
+                }
+            end
+        end
+    end
+    -- Retourne des zéros si le joueur n'est pas trouvé ou n'a pas de corps
+    return { X = 0, Y = 0, Z = 0, LookX = 0, LookY = 0, LookZ = 0 }
+end
+
 -- Liste les entités sur le plot d'un joueur précis
 local function GetBase(playerName)
     local plot = FindPlot(playerName)
@@ -223,6 +245,15 @@ function connectWS()
                         Data = "Arrived at destination"
                     }))
                 end)
+            elseif msg.Method == "GetPlayerPos" then
+                local target = msg.Data or myName
+                ws:Send(HttpService:JSONEncode({
+                    Method = "Result",
+                    From = myName,
+                    To = msg.From,
+                    RequestId = msg.RequestId,
+                    Data = GetPlayerPos(target)
+                }))
             end
         end)
 

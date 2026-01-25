@@ -152,7 +152,6 @@ local function MoveTo(targetPos)
     local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
     if success and path.Status == Enum.PathStatus.Success then
         for _, waypoint in ipairs(path:GetWaypoints()) do
-            if not isRunning or BuyCount >= MaxBuyCount then break end
             if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
             humanoid:MoveTo(waypoint.Position)
             humanoid.MoveToFinished:Wait() 

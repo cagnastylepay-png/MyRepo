@@ -41,17 +41,17 @@ local function CalculGeneration(generation, mutationName, traitsTable)
     return baseIncome * totalMultiplier
 end
 
-local function generateSmallID()
-    -- On génère un nombre entre 0 et 0xFFFFFFFF (le max pour 8 caractères hex)
-    return string.format("%08x", math.random(0, 0xFFFFFFFF))
-end
-
 local function formatMoney(value)
     if value >= 1e12 then return string.format("$%.1fT/s", value / 1e12)
     elseif value >= 1e9 then return string.format("$%.1fB/s", value / 1e9)
     elseif value >= 1e6 then return string.format("$%.1fM/s", value / 1e6)
     elseif value >= 1e3 then return string.format("$%.1fK/s", value / 1e3)
     else return string.format("$%.1f/s", value) end
+end
+
+local function generateSmallID()
+    -- On génère un nombre entre 0 et 0xFFFFFFFF (le max pour 8 caractères hex)
+    return string.format("%08x", math.random(0, 0xFFFFFFFF))
 end
 
 -- Récupère la liste des noms des joueurs sur le serveur
@@ -147,45 +147,19 @@ local function GetBase(playerName)
     return plotData
 end
 
-local function MoveTo(x, z, y, faceX, faceZ, faceY)
-    if not rootPart or not humanoid then return end
-
-    local targetY = y or rootPart.Position.Y
-    local targetPos = Vector3.new(x, targetY, z)
-
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2, 
-        AgentHeight = 5, 
-        AgentCanJump = true
-    })
-    
-    local success, _ = pcall(function() 
-        path:ComputeAsync(rootPart.Position, targetPos) 
-    end)
-    
+local function MoveTo(targetPos)
+    local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
+    local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
     if success and path.Status == Enum.PathStatus.Success then
-        local waypoints = path:GetWaypoints()
-        for _, waypoint in ipairs(waypoints) do
-            
-            if waypoint.Action == Enum.PathWaypointAction.Jump then 
-                humanoid.Jump = true 
-            end
-            
+        for _, waypoint in ipairs(path:GetWaypoints()) do
+            if not isRunning or BuyCount >= MaxBuyCount then break end
+            if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
             humanoid:MoveTo(waypoint.Position)
             humanoid.MoveToFinished:Wait() 
         end
     else
         humanoid:MoveTo(targetPos)
-        humanoid.MoveToFinished:Wait()
     end
-
-    local lookAtX = faceX or rootPart.Position.X
-    local lookAtZ = faceZ or rootPart.Position.Z
-    local lookAtY = faceY or rootPart.Position.Y
-   
-    local lookTarget = Vector3.new(lookAtX, lookAtY, lookAtZ)
-    
-    rootPart.CFrame = CFrame.lookAt(rootPart.Position, lookTarget)
 end
 
 function Identify()
@@ -235,9 +209,8 @@ function connectWS()
             -- COMMANDE : Scan d'un Plot (Data doit contenir le nom du joueur)
             elseif msg.Method == "MoveTo" then
                 -- On utilise task.spawn pour ne pas bloquer le WebSocket pendant le trajet
-                task.spawn(function()
-                    MoveTo(msg.Data.X, msg.Data.Z, msg.Data.Y, msg.Data.FaceX, msg.Data.FaceZ, msg.Data.FaceY)
-        
+                task.spawn(function()                  
+                    MoveTo(Vector3.new(msg.Data.X, msg.Data.Y, msg.Data.Z))
                     ws:Send(HttpService:JSONEncode({
                         Method = "Result",
                         From = myName,

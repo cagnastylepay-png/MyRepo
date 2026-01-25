@@ -1,41 +1,51 @@
 local BrainrotsSpawned = workspace:WaitForChild("RenderedMovingAnimals")
 local DebrisFolder = workspace:WaitForChild("Debris")
 
--- Fonction utilitaire pour formater le CFrame proprement
-local function formatCF(cf)
-    local p = cf.Position
-    return string.format("X: %.2f, Y: %.2f, Z: %.2f", p.X, p.Y, p.Z)
+local pendingAnimals = {}
+
+local function getFlatPos(cf)
+    return Vector3.new(cf.Position.X, 0, cf.Position.Z)
 end
 
--- 1. Gestion des Overheads dans Debris
+-- 1. Gestion des Overheads avec attente de CFrame valide
 DebrisFolder.ChildAdded:Connect(function(child)
     if child.Name == "FastOverheadTemplate" then
-        -- On cherche le DisplayName à l'intérieur de l'AnimalOverhead (vu dans tes captures)
-        local overhead = child:WaitForChild("AnimalOverhead", 2)
-        local displayName = overhead and overhead:WaitForChild("DisplayName", 2)
+        -- BOUCLE D'ATTENTE : On attend que le CFrame ne soit plus à 0,0,0
+        local timeout = 0
+        while child.Position.Magnitude == 0 and timeout < 10 do
+            task.wait() -- On attend la frame suivante
+            timeout = timeout + 1
+        end
+
+        local overheadPos = getFlatPos(child.CFrame)
         
-        local timeSpan = tick() -- Timestamp précis
-        local text = displayName and displayName.Text or "Inconnu"
-        local cf = child.CFrame -- On utilise la propriété CFrame de la Part
-        
-        print(string.format("[DEBRIS] Time: %.3f | Text: %s | CF: %s", timeSpan, text, formatCF(cf)))
+        -- Recherche du match dans les animaux en attente
+        for i, data in ipairs(pendingAnimals) do
+            local dist = (data.Pos - overheadPos).Magnitude
+            if dist < 1 then -- Seuil de tolérance
+                local overhead = child:WaitForChild("AnimalOverhead", 1)
+                local displayName = overhead and overhead:FindFirstChild("DisplayName")                
+                print(string.format("✅ Match! Dist: %.2f | Name: %s", dist, displayName and displayName.Text or "???"))                
+                table.remove(pendingAnimals, i)
+                return
+            end
+        end
     end
 end)
 
--- 2. Gestion des Modèles dans RenderedMovingAnimals
+-- 2. Gestion des Animaux
 BrainrotsSpawned.ChildAdded:Connect(function(child)
-    -- On cherche le RootPart spécifique montré dans tes images
-    local root = child:WaitForChild("RootPart", 2)
-    
+    local root = child:WaitForChild("RootPart", 5)
     if root then
-        local timeSpan = tick()
-        local animalName = child.Name -- Le nom du modèle (ex: Boneca Ambalabu)
-        local cf = root.CFrame -- On utilise le CFrame du RootPart
-        
-        print(string.format("[ANIMAL] Time: %.3f | Model: %s | CF: %s", timeSpan, animalName, formatCF(cf)))
-    else
-        -- Si RootPart n'est pas encore là, on utilise le Pivot du modèle par sécurité
-        local timeSpan = tick()
-        print(string.format("[ANIMAL] Time: %.3f | Model: %s | CF: %s (Pivot)", timeSpan, child.Name, formatCF(child:GetPivot())))
+        -- Même logique d'attente pour l'animal si besoin
+        if root.Position.Magnitude == 0 then
+            task.wait()
+        end
+
+        table.insert(pendingAnimals, {
+            ModelName = child.Name,
+            Pos = getFlatPos(root.CFrame),
+            FullPos = root.Position
+        })
     end
 end)

@@ -1,12 +1,45 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Plots = workspace:WaitForChild("Plots")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
+local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
+local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
 
 -- CONFIGURATION
 local socketURL = "wss://m4gix-ws.onrender.com/?token=M4GIX_SECURE_2026"
 local myName = Players.LocalPlayer.Name
 local reconnectDelay = 5
 local ws = nil
+
+local function CalculGeneration(generation, mutationName, traitsTable)
+    local baseIncome = generation or 0
+    local totalMultiplier = 1 -- Multiplicateur de base (100%)
+
+    -- 1. Bonus de Mutation (Ex: Gold = +0.25)
+    local mutConfig = MutationsData[mutationName]
+    if mutConfig and mutConfig.Modifier then
+        totalMultiplier = totalMultiplier + mutConfig.Modifier
+    end
+
+    -- 2. Bonus de Traits (Ex: Nyan = +5)
+    for _, traitName in ipairs(traitsTable) do
+        local traitConfig = TraitsData[traitName]
+        if traitConfig and traitConfig.MultiplierModifier then
+            totalMultiplier = totalMultiplier + traitConfig.MultiplierModifier
+        end
+    end
+
+    return baseIncome * totalMultiplier
+end
+
+local function formatMoney(value)
+    if value >= 1e12 then return string.format("$%.1fT/s", value / 1e12)
+    elseif value >= 1e9 then return string.format("$%.1fB/s", value / 1e9)
+    elseif value >= 1e6 then return string.format("$%.1fM/s", value / 1e6)
+    elseif value >= 1e3 then return string.format("$%.1fK/s", value / 1e3)
+    else return string.format("$%.1f/s", value) end
+end
 
 -- Récupère la liste des noms des joueurs sur le serveur
 local function GetPlayers()
@@ -43,27 +76,34 @@ local function GetBase(playerName)
     
     for _, child in ipairs(plot:GetChildren()) do
         -- On identifie un Brainrot par la présence d'un Controller d'animation
-        if child:IsA("Model") and (child:FindFirstChild("AnimationController") or child:FindFirstChild("Humanoid")) then
+        local config = AnimalsData[child.Name]
+        
+        if config then
+            -- On récupère les attributs du modèle
+            local currentMutation = child:GetAttribute("Mutation") or "Default"
+            local currentTraits = {}
             
-            local brainrotInfo = {
-                Name = child.Name,
-                Mutation = child:GetAttribute("Mutation") or "Default",
-                Traits = {}
-            }
-
-            -- Extraction des traits (format string "Trait1, Trait2" ou table)
-            local traitsRaw = child:GetAttribute("Traits")
-            if traitsRaw then
-                if type(traitsRaw) == "string" then
-                    for trait in string.gmatch(traitsRaw, '([^,]+)') do
-                        table.insert(brainrotInfo.Traits, trait:match("^%s*(.-)%s*$"))
-                    end
-                elseif type(traitsRaw) == "table" then
-                    brainrotInfo.Traits = traitsRaw
+            -- Extraction des traits
+            local rawTraits = child:GetAttribute("Traits")
+            if type(rawTraits) == "string" then
+                for t in string.gmatch(rawTraits, '([^,]+)') do 
+                    table.insert(currentTraits, t:match("^%s*(.-)%s*$")) 
                 end
+            elseif type(rawTraits) == "table" then
+                currentTraits = rawTraits
             end
 
-            table.insert(plotData.Brainrots, brainrotInfo)
+            -- CALCUL VIA LA MÉTHODE
+            local incomeGen = CalculGeneration(config.Generation, currentMutation, currentTraits)
+
+            table.insert(plotData.Brainrots, {
+                Name = config.DisplayName or child.Name,
+                Rarity = config.Rarity or "Common",
+                Generation = incomeGen,
+                GenString = formatMoney(incomeGen),
+                Mutation = currentMutation,
+                Traits = currentTraits
+            })
         end
     end
     return plotData

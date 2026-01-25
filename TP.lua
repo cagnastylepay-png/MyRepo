@@ -9,7 +9,7 @@ local reconnectDelay = 5
 local ws = nil
 
 -- Récupère la liste des noms des joueurs sur le serveur
-local function GetPlayersName()
+local function GetPlayers()
     local displayNames = {}
     for _, player in ipairs(Players:GetPlayers()) do
         table.insert(displayNames, player.DisplayName)
@@ -18,7 +18,7 @@ local function GetPlayersName()
 end
 
 -- Trouve le terrain appartenant à un joueur
-local function FindPlotByPlayerName(playerName)
+local function FindPlot(playerName)
     for _, plot in ipairs(Plots:GetChildren()) do
         local plotSign = plot:FindFirstChild("PlotSign")
         local surfaceGui = plotSign and plotSign:FindFirstChild("SurfaceGui")
@@ -35,11 +35,11 @@ local function FindPlotByPlayerName(playerName)
 end
 
 -- Liste les entités sur le plot d'un joueur précis
-local function ListBrainrotsByPlayerName(playerName)
-    local plot = FindPlotByPlayerName(playerName)
+local function GetBase(playerName)
+    local plot = FindPlot(playerName)
     if not plot then return { Error = "Plot non trouvé" } end
 
-    local plotData = { Owner = playerName, Brainrots = {} }
+    local plotData = { Player = playerName, Brainrots = {} }
     
     for _, child in ipairs(plot:GetChildren()) do
         -- On identifie un Brainrot par la présence d'un Controller d'animation
@@ -101,18 +101,18 @@ function connectWS()
                     From = myName,
                     To = msg.From,
                     RequestId = msg.RequestId,
-                    Data = GetPlayersName()
+                    Data = GetPlayers()
                 }))
 
             -- COMMANDE : Scan d'un Plot (Data doit contenir le nom du joueur)
-            elseif msg.Method == "ListBrainrots" then
+            elseif msg.Method == "GetBase" then
                 local target = msg.Data or myName
                 ws:Send(HttpService:JSONEncode({
                     Method = "Result",
                     From = myName,
                     To = msg.From,
                     RequestId = msg.RequestId,
-                    Data = ListBrainrotsByPlayerName(target)
+                    Data = GetBase(target)
                 }))
             end
         end)

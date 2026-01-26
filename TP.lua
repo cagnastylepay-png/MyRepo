@@ -365,44 +365,66 @@ game.Players.PlayerRemoving:Connect(function(player)
     end
 end)
 
+local function GetTextWithTimeout(parent, childName, timeout)
+    local obj = parent:FindFirstChild(childName)
+    if not obj then return "" end
+    
+    local start = tick()
+    while obj.Text == "" and (tick() - start) < (timeout or 2) do
+        task.wait(0.1)
+    end
+    return obj.Text
+end
+
 RenderedAnimals.ChildAdded:Connect(function(animal)
-    print("🔍 [DEBUG] Nouvel animal détecté dans le dossier : " .. animal.Name)
-    task.wait(1.5) -- On augmente un peu le temps pour être sûr que l'UI est là
+    print("🔍 [DEBUG] Nouvel animal : " .. animal.Name)
+    task.wait(1) -- Délai initial pour laisser le temps au dossier Debris de se remplir
     
     local overhead = FindOverheadForAnimal(animal)
     local prompt = FindPromptForAnimal(animal)
 
     if not overhead then 
-        print("🛑 [ERREUR] Abandon : Pas d'overhead trouvé pour " .. animal.Name)
+        print("🛑 [ERREUR] Pas d'overhead pour " .. animal.Name)
         return 
     end
+
+    -- On attend spécifiquement que les objets critiques soient chargés
+    local displayObj = overhead:FindFirstChild("DisplayName", true)
+    if not displayObj then return end
+
+    -- On attend que le texte du nom et du prix soit répliqué
+    local nameText = GetTextWithTimeout(overhead, "DisplayName", 3)
+    local priceText = GetTextWithTimeout(overhead, "Price", 2)
+    local genText = GetTextWithTimeout(overhead, "Generation", 2)
     
-    -- On vérifie que DisplayName existe bien avant de boucler
-    local displayObj = overhead:FindFirstChild("DisplayName", true) -- Le 'true' cherche en profondeur
-    if not displayObj then
-        print("🛑 [ERREUR] Abandon : 'DisplayName' introuvable dans l'overhead de " .. animal.Name)
-        return
+    if nameText == "" then 
+        print("🛑 [ERREUR] Texte vide pour " .. animal.Name)
+        return 
     end
 
-    local timeout = 0
-    while displayObj.Text == "" and timeout < 20 do
-        task.wait(0.1) 
-        timeout = timeout + 1
+    -- Gestion précise de la Mutation
+    local actualMutation = "Default"
+    local mutObj = overhead:FindFirstChild("Mutation")
+    if mutObj then
+        -- On attend un court instant pour voir si la mutation devient visible
+        local startMut = tick()
+        while mutObj.Visible == false and (tick() - startMut) < 1.5 do
+            task.wait(0.1)
+        end
+        
+        if mutObj.Visible and mutObj.Text ~= "" then
+            actualMutation = mutObj.Text
+        end
     end
 
-    if displayObj.Text == "" then
-        print("🛑 [ERREUR] Abandon : Texte de l'overhead resté vide pour " .. animal.Name)
-        return
-    end
-
-    print("✅ [OK] Infos chargées pour " .. displayObj.Text .. ", appel de OnBrainrotSpawn...")
+    print(string.format("✅ [FINAL] %s chargé | Mut: %s | Prix: %s", nameText, actualMutation, priceText))
 
     local animalData = {
         Instance = animal,
-        DisplayName = displayObj.Text,
-        Mutation = (overhead:FindFirstChild("Mutation") and overhead.Mutation.Visible) and overhead.Mutation.Text or "Default",
-        Generation = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "1",
-        Price = overhead:FindFirstChild("Price") and overhead.Price.Text or "0",
+        DisplayName = nameText,
+        Mutation = actualMutation,
+        Generation = genText ~= "" and genText or "1",
+        Price = priceText ~= "" and priceText or "0",
         Rarity = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
         Prompt = prompt
     }

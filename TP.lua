@@ -190,7 +190,8 @@ end
 
 local function FindOverheadForAnimal(animalModel)
     local animalName = animalModel.Name
-    local foundWithName = 0
+    local bestItem = nil
+    local minDistance = math.huge
 
     for _, item in ipairs(Debris:GetChildren()) do
         if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
@@ -198,61 +199,60 @@ local function FindOverheadForAnimal(animalModel)
             local displayNameLabel = overheadGui and overheadGui:FindFirstChild("DisplayName")
             
             if displayNameLabel and displayNameLabel.Text == animalName then
-                foundWithName = foundWithName + 1
                 local animalPos = animalModel:GetPivot().Position 
                 local overheadPos = item.Position
                 local dist = (Vector2.new(overheadPos.X, overheadPos.Z) - Vector2.new(animalPos.X, animalPos.Z)).Magnitude
                 
-                if dist < 4 then
-                    print(string.format("✅ [Overhead] Match trouvé pour %s (Dist: %.2f)", animalName, dist))
-                    return item
-                else
-                    -- Log utile pour ajuster la tolérance de 4 studs si nécessaire
-                    print(string.format("⏳ [Overhead] Nom OK pour %s, mais trop loin (Dist: %.2f > 4)", animalName, dist))
+                -- On cherche celui qui est vraiment sur l'animal (le plus proche)
+                if dist < minDistance then
+                    minDistance = dist
+                    bestItem = item
                 end
             end
         end
     end
     
-    if foundWithName == 0 then
-        print(string.format("❌ [Overhead] Aucun template trouvé dans Debris pour: %s", animalName))
+    if bestItem and minDistance < 10 then -- Tolérance augmentée à 10 pour plus de souplesse
+        print(string.format("✅ [Overhead] Match trouvé pour %s (Dist: %.2f)", animalName, minDistance))
+        return bestItem
+    else
+        print(string.format("❌ [Overhead] Aucun match proche pour %s (Plus proche: %.2f)", animalName, minDistance))
+        return nil
     end
-    return nil
 end
+
 local function FindPromptForAnimal(animalModel)
     local animalName = animalModel.Name
-    local potentialPrompts = 0
+    local bestPrompt = nil
+    local minDistance = math.huge
 
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") then
-            -- On vérifie le texte
-            if obj.ActionText == "Purchase" and string.find(obj.ObjectText, animalName) then
-                potentialPrompts = potentialPrompts + 1
-                
+        if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
+            if string.find(obj.ObjectText, animalName) then
                 local attachment = obj.Parent
                 if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
                     local promptPos = attachment.WorldCFrame.Position
                     local animalPos = animalModel:GetPivot().Position
                     local dist = (Vector2.new(promptPos.X, promptPos.Z) - Vector2.new(animalPos.X, animalPos.Z)).Magnitude
                     
-                    if dist < 5 then
-                        print(string.format("✅ [Prompt] ProximityPrompt lié à %s trouvé !", animalName))
-                        return obj
-                    else
-                        print(string.format("⚠️ [Prompt] Trouvé %s, mais distance incorrecte (%.2f studs)", animalName, dist))
+                    if dist < minDistance then
+                        minDistance = dist
+                        bestPrompt = obj
                     end
-                else
-                    print(string.format("❓ [Prompt] %s trouvé mais Parent n'est pas PromptAttachment", animalName))
                 end
             end
         end
     end
 
-    if potentialPrompts == 0 then
-        print(string.format("❌ [Prompt] Aucun ProximityPrompt d'achat trouvé pour %s dans le Workspace", animalName))
+    if bestPrompt and minDistance < 15 then
+        print(string.format("✅ [Prompt] %s trouvé ! (Dist: %.2f)", animalName, minDistance))
+        return bestPrompt
+    else
+        print(string.format("❌ [Prompt] Aucun prompt à portée pour %s", animalName))
+        return nil
     end
-    return nil
 end
+
 function connectWS()
     local success, result = pcall(function()
         return (WebSocket and WebSocket.connect) and WebSocket.connect(socketURL) or WebSocket.new(socketURL)
@@ -366,43 +366,48 @@ game.Players.PlayerRemoving:Connect(function(player)
 end)
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
-    task.wait(1)
+    print("🔍 [DEBUG] Nouvel animal détecté dans le dossier : " .. animal.Name)
+    task.wait(1.5) -- On augmente un peu le temps pour être sûr que l'UI est là
+    
     local overhead = FindOverheadForAnimal(animal)
     local prompt = FindPromptForAnimal(animal)
 
-    if not overhead then return end
+    if not overhead then 
+        print("🛑 [ERREUR] Abandon : Pas d'overhead trouvé pour " .. animal.Name)
+        return 
+    end
+    
+    -- On vérifie que DisplayName existe bien avant de boucler
+    local displayObj = overhead:FindFirstChild("DisplayName", true) -- Le 'true' cherche en profondeur
+    if not displayObj then
+        print("🛑 [ERREUR] Abandon : 'DisplayName' introuvable dans l'overhead de " .. animal.Name)
+        return
+    end
 
-        local displayObj = overhead:WaitForChild("DisplayName", 3)
-        local mutationObj = overhead:FindFirstChild("Mutation") 
-        local generationObj = overhead:FindFirstChild("Generation")
-        local priceObj = overhead:FindFirstChild("Price")        
-        local rarityObj = overhead:FindFirstChild("Rarity")
+    local timeout = 0
+    while displayObj.Text == "" and timeout < 20 do
+        task.wait(0.1) 
+        timeout = timeout + 1
+    end
 
-        local timeout = 0
-        while (displayObj and displayObj.Text == "") and timeout < 10 do
-            task.wait(0.1) 
-            timeout = timeout + 1
-        end
+    if displayObj.Text == "" then
+        print("🛑 [ERREUR] Abandon : Texte de l'overhead resté vide pour " .. animal.Name)
+        return
+    end
 
-        if displayObj and displayObj.Text ~= "" then
-            local actualMutation = "Default"
-            -- On vérifie si le texte est "Gold" ET si l'étiquette est visible
-            if mutationObj and mutationObj.Visible == true and mutationObj.Text ~= "" then
-                actualMutation = mutationObj.Text
-            end
+    print("✅ [OK] Infos chargées pour " .. displayObj.Text .. ", appel de OnBrainrotSpawn...")
 
-            local animalData = {
-                Instance = animal,
-                DisplayName = displayObj.Text,
-                Mutation = actualMutation,
-                Generation = generationObj and generationObj.Text or "1",
-                Price = priceObj and priceObj.Text or "0",
-                Rarity = rarityObj and rarityObj.Text or "Common",
-                Prompt = prompt
-            }
-        
-            OnBrainrotSpawn(animalData)
-        end
+    local animalData = {
+        Instance = animal,
+        DisplayName = displayObj.Text,
+        Mutation = (overhead:FindFirstChild("Mutation") and overhead.Mutation.Visible) and overhead.Mutation.Text or "Default",
+        Generation = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "1",
+        Price = overhead:FindFirstChild("Price") and overhead.Price.Text or "0",
+        Rarity = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
+        Prompt = prompt
+    }
+    
+    OnBrainrotSpawn(animalData)
 end)
 
 task.spawn(connectWS)

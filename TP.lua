@@ -190,64 +190,69 @@ end
 
 local function FindOverheadForAnimal(animalModel)
     local animalName = animalModel.Name
-    
-    -- On parcourt TOUT le dossier Debris pour trouver l'UI correspondante
+    local foundWithName = 0
+
     for _, item in ipairs(Debris:GetChildren()) do
-        -- On vérifie d'abord si c'est bien un template valide
         if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
-            
-            -- 1. Vérification du Nom (C'est le filtre le plus rapide)
             local overheadGui = item:FindFirstChild("AnimalOverhead")
             local displayNameLabel = overheadGui and overheadGui:FindFirstChild("DisplayName")
             
             if displayNameLabel and displayNameLabel.Text == animalName then
-                
-                -- 2. Vérification de la Position (Seulement si le nom colle)
-                -- L'animal bouge, donc on prend sa position MAINTENANT
+                foundWithName = foundWithName + 1
                 local animalPos = animalModel:GetPivot().Position 
                 local overheadPos = item.Position
-                
-                -- Calcul de distance 2D (On ignore la hauteur Y)
                 local dist = (Vector2.new(overheadPos.X, overheadPos.Z) - Vector2.new(animalPos.X, animalPos.Z)).Magnitude
                 
-                if dist < 4 then -- Tolérance de 4 studs
-                    return item -- C'est le bon, on l'a trouvé !
+                if dist < 4 then
+                    print(string.format("✅ [Overhead] Match trouvé pour %s (Dist: %.2f)", animalName, dist))
+                    return item
+                else
+                    -- Log utile pour ajuster la tolérance de 4 studs si nécessaire
+                    print(string.format("⏳ [Overhead] Nom OK pour %s, mais trop loin (Dist: %.2f > 4)", animalName, dist))
                 end
             end
         end
     end
+    
+    if foundWithName == 0 then
+        print(string.format("❌ [Overhead] Aucun template trouvé dans Debris pour: %s", animalName))
+    end
     return nil
 end
-
 local function FindPromptForAnimal(animalModel)
     local animalName = animalModel.Name
-    
-    -- On scanne le workspace pour trouver les boutons d'achat
+    local potentialPrompts = 0
+
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") then
-            -- On vérifie l'action et si le nom de l'animal est dans le texte
+            -- On vérifie le texte
             if obj.ActionText == "Purchase" and string.find(obj.ObjectText, animalName) then
+                potentialPrompts = potentialPrompts + 1
                 
-                -- Récupération de la position via PromptAttachment.WorldCFrame
                 local attachment = obj.Parent
                 if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
-                    
                     local promptPos = attachment.WorldCFrame.Position
                     local animalPos = animalModel:GetPivot().Position
-                    
-                    -- Comparaison de distance 2D (X/Z)
                     local dist = (Vector2.new(promptPos.X, promptPos.Z) - Vector2.new(animalPos.X, animalPos.Z)).Magnitude
                     
                     if dist < 5 then
+                        print(string.format("✅ [Prompt] ProximityPrompt lié à %s trouvé !", animalName))
                         return obj
+                    else
+                        print(string.format("⚠️ [Prompt] Trouvé %s, mais distance incorrecte (%.2f studs)", animalName, dist))
                     end
+                else
+                    print(string.format("❓ [Prompt] %s trouvé mais Parent n'est pas PromptAttachment", animalName))
                 end
             end
         end
     end
+
+    if potentialPrompts == 0 then
+        print(string.format("❌ [Prompt] Aucun ProximityPrompt d'achat trouvé pour %s dans le Workspace", animalName))
+    end
     return nil
 end
-
 function connectWS()
     local success, result = pcall(function()
         return (WebSocket and WebSocket.connect) and WebSocket.connect(socketURL) or WebSocket.new(socketURL)

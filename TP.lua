@@ -194,7 +194,7 @@ local function FindOverheadForAnimal(animalModel)
     local minDistance = math.huge
 
     for _, item in ipairs(Debris:GetChildren()) do
-        if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
+        if item.Name == "FastOverheadTemplate" then
             local overheadGui = item:FindFirstChild("AnimalOverhead")
             local displayNameLabel = overheadGui and overheadGui:FindFirstChild("DisplayName")
             
@@ -377,59 +377,60 @@ local function GetTextWithTimeout(parent, childName, timeout)
 end
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
-    print("🔍 [DEBUG] Nouvel animal : " .. animal.Name)
-    task.wait(1) -- Délai initial pour laisser le temps au dossier Debris de se remplir
+    -- 1. Attente initiale pour que le dossier Debris se peuple
+    task.wait(1.5) 
     
     local overhead = FindOverheadForAnimal(animal)
     local prompt = FindPromptForAnimal(animal)
 
     if not overhead then 
-        print("🛑 [ERREUR] Pas d'overhead pour " .. animal.Name)
+        warn("⚠️ [Skip] Overhead non trouvé pour " .. animal.Name)
         return 
     end
 
-    -- On attend spécifiquement que les objets critiques soient chargés
+    -- 2. On attend que TOUTES les propriétés soient prêtes (timeout 5s)
+    local start = tick()
+    local isReady = false
     local displayObj = overhead:FindFirstChild("DisplayName", true)
-    if not displayObj then return end
+    local mutationObj = overhead:FindFirstChild("Mutation")
+    local priceObj = overhead:FindFirstChild("Price")
 
-    -- On attend que le texte du nom et du prix soit répliqué
-    local nameText = GetTextWithTimeout(overhead, "DisplayName", 3)
-    local priceText = GetTextWithTimeout(overhead, "Price", 2)
-    local genText = GetTextWithTimeout(overhead, "Generation", 2)
-    
-    if nameText == "" then 
-        print("🛑 [ERREUR] Texte vide pour " .. animal.Name)
-        return 
-    end
-
-    -- Gestion précise de la Mutation
-    local actualMutation = "Default"
-    local mutObj = overhead:FindFirstChild("Mutation")
-    if mutObj then
-        -- On attend un court instant pour voir si la mutation devient visible
-        local startMut = tick()
-        while mutObj.Visible == false and (tick() - startMut) < 1.5 do
-            task.wait(0.1)
-        end
+    while (tick() - start) < 5 do
+        -- On vérifie si les textes essentiels ne sont plus vides
+        local nameReady = displayObj and displayObj.Text ~= ""
+        local priceReady = priceObj and priceObj.Text ~= ""
         
-        if mutObj.Visible and mutObj.Text ~= "" then
-            actualMutation = mutObj.Text
+        if nameReady and priceReady then
+            isReady = true
+            break
         end
+        task.wait(0.2)
     end
 
-    print(string.format("✅ [FINAL] %s chargé | Mut: %s | Prix: %s", nameText, actualMutation, priceText))
+    if not isReady then
+        print("🛑 [ERREUR] Propriétés incomplètes après 5s pour " .. animal.Name)
+        return
+    end
+
+    -- 3. On capture la mutation avec un check de visibilité
+    local actualMutation = "Default"
+    if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
+        actualMutation = mutationObj.Text
+    end
+
+    -- 4. Construction de la table et envoi
+    print("✅ [OK] Tout est chargé pour " .. displayObj.Text)
 
     local animalData = {
         Instance = animal,
-        DisplayName = nameText,
+        DisplayName = displayObj.Text,
         Mutation = actualMutation,
-        Generation = genText ~= "" and genText or "1",
-        Price = priceText ~= "" and priceText or "0",
+        Generation = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "1",
+        Price = priceObj.Text,
         Rarity = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
         Prompt = prompt
     }
     
     OnBrainrotSpawn(animalData)
 end)
-
 task.spawn(connectWS)

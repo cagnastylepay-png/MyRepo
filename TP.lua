@@ -4,6 +4,8 @@ local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local Plots = workspace:WaitForChild("Plots")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
+local Debris = workspace:WaitForChild("Debris")
 
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
@@ -80,6 +82,20 @@ local function FindPlot(playerName)
     return nil
 end
 
+local function WaitPlot(playerName, timeout)
+    local startTime = tick()
+    local duration = timeout or 15 -- On attend max 15 secondes
+    
+    while tick() - startTime < duration do
+        local plot = FindPlot(playerName) -- Ta fonction existante qui cherche le texte sur le panneau
+        if plot then
+            return plot
+        end
+        task.wait(0.5) -- On vérifie toutes les demi-secondes
+    end
+    return nil
+end
+
 local function GetPlayerPos(playerName)
     -- On cherche le joueur
     for _, p in ipairs(Players:GetPlayers()) do
@@ -104,7 +120,7 @@ end
 
 -- Liste les entités sur le plot d'un joueur précis
 local function GetBase(playerName)
-    local plot = FindPlot(playerName)
+    local plot = WaitPlot(playerName)
     if not plot then return { Error = "Plot non trouvé" } end
 
     local plotData = { Player = playerName, Brainrots = {} }
@@ -131,7 +147,7 @@ local function GetBase(playerName)
             -- CALCUL VIA LA MÉTHODE
             local incomeGen = CalculGeneration(config.Generation, currentMutation, currentTraits)
             local uniqueId = generateSmallID()
-            brainrotsDict[uniqueId] = {
+            local br = {
                 Id = uniqueId,
                 Name = config.DisplayName or child.Name,
                 Rarity = config.Rarity or "Common",
@@ -140,8 +156,8 @@ local function GetBase(playerName)
                 Mutation = currentMutation,
                 Traits = currentTraits
             }
-
-            table.insert(plotData.Brainrots, brainrotsDict[uniqueId])
+            brainrotsDict[uniqueId] = child
+            table.insert(plotData.Brainrots, br)
         end
     end
     return plotData
@@ -170,6 +186,66 @@ function Identify()
             Data = ""
         }))
     end
+end
+
+local function FindOverheadForAnimal(animalModel)
+    local animalName = animalModel.Name
+    
+    -- On parcourt TOUT le dossier Debris pour trouver l'UI correspondante
+    for _, item in ipairs(Debris:GetChildren()) do
+        -- On vérifie d'abord si c'est bien un template valide
+        if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
+            
+            -- 1. Vérification du Nom (C'est le filtre le plus rapide)
+            local overheadGui = item:FindFirstChild("AnimalOverhead")
+            local displayNameLabel = overheadGui and overheadGui:FindFirstChild("DisplayName")
+            
+            if displayNameLabel and displayNameLabel.Text == animalName then
+                
+                -- 2. Vérification de la Position (Seulement si le nom colle)
+                -- L'animal bouge, donc on prend sa position MAINTENANT
+                local animalPos = animalModel:GetPivot().Position 
+                local overheadPos = item.Position
+                
+                -- Calcul de distance 2D (On ignore la hauteur Y)
+                local dist = (Vector2.new(overheadPos.X, overheadPos.Z) - Vector2.new(animalPos.X, animalPos.Z)).Magnitude
+                
+                if dist < 4 then -- Tolérance de 4 studs
+                    return item -- C'est le bon, on l'a trouvé !
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function FindPromptForAnimal(animalModel)
+    local animalName = animalModel.Name
+    
+    -- On scanne le workspace pour trouver les boutons d'achat
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            -- On vérifie l'action et si le nom de l'animal est dans le texte
+            if obj.ActionText == "Purchase" and string.find(obj.ObjectText, animalName) then
+                
+                -- Récupération de la position via PromptAttachment.WorldCFrame
+                local attachment = obj.Parent
+                if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
+                    
+                    local promptPos = attachment.WorldCFrame.Position
+                    local animalPos = animalModel:GetPivot().Position
+                    
+                    -- Comparaison de distance 2D (X/Z)
+                    local dist = (Vector2.new(promptPos.X, promptPos.Z) - Vector2.new(animalPos.X, animalPos.Z)).Magnitude
+                    
+                    if dist < 5 then
+                        return obj
+                    end
+                end
+            end
+        end
+    end
+    return nil
 end
 
 function connectWS()
@@ -240,5 +316,88 @@ function connectWS()
         connectWS()
     end
 end
+
+local function OnBrainrotSpawn(animal)
+    print(string.format("🐾 [DEBUG] %s | Mut: %s | Gen: %s", animal.DisplayName, animal.Mutation, animal.Generation))
+    
+    -- Condition de sniping
+    if animal.Mutation == "Gold" then
+        print("🌟 CIBLE VERROUILLÉE : " .. animal.DisplayName)
+        if animal.Prompt then
+            local connection
+            connection = animal.Prompt.PromptShown:Connect(function()
+                fireproximityprompt(animal.Prompt)
+                print("✅ Prompt affiché et activé pour " .. animal.DisplayName)
+                connection:Disconnect()
+            end)
+        end
+    end
+end
+
+game.Players.PlayerAdded:Connect(function(player)
+    -- On utilise spawn pour que l'attente du plot ne bloque pas le reste du script
+    task.spawn(function()
+        local baseData = GetBase(player.DisplayName)
+        if ws and baseData then
+            ws:Send(HttpService:JSONEncode({
+                Method = "OnPlayerJoined",
+                From = myName,
+                To = "System",
+                Data = baseData
+            }))
+        end
+    end)
+end)
+-- Détection des sorties
+game.Players.PlayerRemoving:Connect(function(player)
+    if ws then
+        ws:Send(HttpService:JSONEncode({
+            Method = "OnPlayerLeft",
+            From = myName,
+            To = "System",
+            Data = { Name = player.DisplayName}
+        }))
+    end
+end)
+
+RenderedAnimals.ChildAdded:Connect(function(animal)
+    task.wait(1)
+    local overhead = FindOverheadForAnimal(animal)
+    local prompt = FindPromptForAnimal(animal)
+
+    if not overhead then return end
+
+        local displayObj = overhead:WaitForChild("DisplayName", 3)
+        local mutationObj = overhead:FindFirstChild("Mutation") 
+        local generationObj = overhead:FindFirstChild("Generation")
+        local priceObj = overhead:FindFirstChild("Price")        
+        local rarityObj = overhead:FindFirstChild("Rarity")
+
+        local timeout = 0
+        while (displayObj and displayObj.Text == "") and timeout < 10 do
+            task.wait(0.1) 
+            timeout = timeout + 1
+        end
+
+        if displayObj and displayObj.Text ~= "" then
+            local actualMutation = "Default"
+            -- On vérifie si le texte est "Gold" ET si l'étiquette est visible
+            if mutationObj and mutationObj.Visible == true and mutationObj.Text ~= "" then
+                actualMutation = mutationObj.Text
+            end
+
+            local animalData = {
+                Instance = animal,
+                DisplayName = displayObj.Text,
+                Mutation = actualMutation,
+                Generation = generationObj and generationObj.Text or "1",
+                Price = priceObj and priceObj.Text or "0",
+                Rarity = rarityObj and rarityObj.Text or "Common",
+                Prompt = prompt
+            }
+        
+            OnBrainrotSpawn(animalData)
+        end
+end)
 
 task.spawn(connectWS)

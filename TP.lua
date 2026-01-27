@@ -188,70 +188,6 @@ function Identify()
     end
 end
 
-local function FindOverheadForAnimal(animalModel)
-    local animalName = animalModel.Name
-    local bestItem = nil
-    local minDistance = math.huge
-
-    for _, item in ipairs(Debris:GetChildren()) do
-        if item.Name == "FastOverheadTemplate" then
-            local overheadGui = item:FindFirstChild("AnimalOverhead")
-            local displayNameLabel = overheadGui and overheadGui:FindFirstChild("DisplayName")
-            
-            if displayNameLabel and displayNameLabel.Text == animalName then
-                local animalPos = animalModel:GetPivot().Position 
-                local overheadPos = item.Position
-                local dist = (Vector2.new(overheadPos.X, overheadPos.Z) - Vector2.new(animalPos.X, animalPos.Z)).Magnitude
-                
-                -- On cherche celui qui est vraiment sur l'animal (le plus proche)
-                if dist < minDistance then
-                    minDistance = dist
-                    bestItem = item
-                end
-            end
-        end
-    end
-    
-    if bestItem and minDistance < 10 then -- Tolérance augmentée à 10 pour plus de souplesse
-        print(string.format("✅ [Overhead] Match trouvé pour %s (Dist: %.2f)", animalName, minDistance))
-        return bestItem
-    else
-        print(string.format("❌ [Overhead] Aucun match proche pour %s (Plus proche: %.2f)", animalName, minDistance))
-        return nil
-    end
-end
-
-local function FindPromptForAnimal(animalModel)
-    local animalName = animalModel.Name
-    local bestPrompt = nil
-    local minDistance = math.huge
-
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
-            if string.find(obj.ObjectText, animalName) then
-                local attachment = obj.Parent
-                if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
-                    local promptPos = attachment.WorldCFrame.Position
-                    local animalPos = animalModel:GetPivot().Position
-                    local dist = (Vector2.new(promptPos.X, promptPos.Z) - Vector2.new(animalPos.X, animalPos.Z)).Magnitude
-                    
-                    if dist < minDistance then
-                        minDistance = dist
-                        bestPrompt = obj
-                    end
-                end
-            end
-        end
-    end
-
-    if bestPrompt and minDistance < 15 then
-        print(string.format("✅ [Prompt] %s trouvé ! (Dist: %.2f)", animalName, minDistance))
-        return bestPrompt
-    else
-        print(string.format("❌ [Prompt] Aucun prompt à portée pour %s", animalName))
-        return nil
-    end
-end
 
 function connectWS()
     local success, result = pcall(function()
@@ -338,7 +274,108 @@ local function OnBrainrotSpawn(animal)
         end
     end
 end
+local function FindOverheadForAnimal(animalModel)
+    local animalName = animalModel.Name
+    local bestTemplate = nil
+    local minDistance = math.huge
 
+    for _, item in ipairs(Debris:GetChildren()) do
+        if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
+            -- On plonge dans AnimalOverhead pour vérifier le texte
+            local container = item:FindFirstChild("AnimalOverhead")
+            local displayNameLabel = container and container:FindFirstChild("DisplayName")
+            
+            if displayNameLabel and displayNameLabel.Text == animalName then
+                local dist = (item.Position - animalModel:GetPivot().Position).Magnitude
+                if dist < minDistance then
+                    minDistance = dist
+                    bestTemplate = item
+                end
+            end
+        end
+    end
+
+    if bestTemplate and minDistance < 12 then
+        print(string.format("✅ [Overhead] Match: %s (Dist: %.2f)", animalName, minDistance))
+        return bestTemplate
+    end
+    return nil
+end
+
+-- 3. Trouver le bouton d'achat (ProximityPrompt)
+local function FindPromptForAnimal(animalModel)
+    local animalName = animalModel.Name
+    local bestPrompt = nil
+    local minDistance = math.huge
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
+            if string.find(obj.ObjectText, animalName) then
+                local attachment = obj.Parent
+                if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
+                    local dist = (attachment.WorldCFrame.Position - animalModel:GetPivot().Position).Magnitude
+                    if dist < minDistance then
+                        minDistance = dist
+                        bestPrompt = obj
+                    end
+                end
+            end
+        end
+    end
+    return (bestPrompt and minDistance < 15) and bestPrompt or nil
+end
+
+RenderedAnimals.ChildAdded:Connect(function(animal)
+    -- On attend que les instances soient créées côté client
+    task.wait(1.5) 
+    
+    local template = FindOverheadForAnimal(animal)
+    local prompt = FindPromptForAnimal(animal)
+
+    if not template then return end
+    
+    local container = template:FindFirstChild("AnimalOverhead")
+    if not container then return end
+
+    -- ATTENTE ACTIVE DES DONNÉES (Max 5 secondes)
+    local displayObj = container:FindFirstChild("DisplayName")
+    local priceObj = container:FindFirstChild("Price")
+    local mutationObj = container:FindFirstChild("Mutation")
+    
+    local start = tick()
+    while (tick() - start) < 5 do
+        -- On vérifie si les TextLabels cruciaux ont reçu leurs données
+        if displayObj and displayObj.Text ~= "" and priceObj and priceObj.Text ~= "" then
+            break
+        end
+        task.wait(0.2)
+    end
+
+    -- Si après 5s on n'a toujours pas de nom, on abandonne
+    if not displayObj or displayObj.Text == "" then 
+        warn("🛑 [Données Incomplètes] " .. animal.Name)
+        return 
+    end
+
+    -- On détermine la mutation réelle (Check visibilité)
+    local actualMutation = "Default"
+    if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
+        actualMutation = mutationObj.Text
+    end
+
+    -- Création du pack de données pour OnBrainrotSpawn
+    local animalData = {
+        Instance = animal,
+        DisplayName = displayObj.Text,
+        Mutation = actualMutation,
+        Generation = container:FindFirstChild("Generation") and container.Generation.Text or "1",
+        Price = priceObj.Text,
+        Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
+        Prompt = prompt
+    }
+    
+    OnBrainrotSpawn(animalData)
+end)
 game.Players.PlayerAdded:Connect(function(player)
     -- On utilise spawn pour que l'attente du plot ne bloque pas le reste du script
     task.spawn(function()
@@ -365,72 +402,4 @@ game.Players.PlayerRemoving:Connect(function(player)
     end
 end)
 
-local function GetTextWithTimeout(parent, childName, timeout)
-    local obj = parent:FindFirstChild(childName)
-    if not obj then return "" end
-    
-    local start = tick()
-    while obj.Text == "" and (tick() - start) < (timeout or 2) do
-        task.wait(0.1)
-    end
-    return obj.Text
-end
-
-RenderedAnimals.ChildAdded:Connect(function(animal)
-    -- 1. Attente initiale pour que le dossier Debris se peuple
-    task.wait(1.5) 
-    
-    local overhead = FindOverheadForAnimal(animal)
-    local prompt = FindPromptForAnimal(animal)
-
-    if not overhead then 
-        warn("⚠️ [Skip] Overhead non trouvé pour " .. animal.Name)
-        return 
-    end
-
-    -- 2. On attend que TOUTES les propriétés soient prêtes (timeout 5s)
-    local start = tick()
-    local isReady = false
-    local displayObj = overhead:FindFirstChild("DisplayName", true)
-    local mutationObj = overhead:FindFirstChild("Mutation")
-    local priceObj = overhead:FindFirstChild("Price")
-
-    while (tick() - start) < 5 do
-        -- On vérifie si les textes essentiels ne sont plus vides
-        local nameReady = displayObj and displayObj.Text ~= ""
-        local priceReady = priceObj and priceObj.Text ~= ""
-        
-        if nameReady and priceReady then
-            isReady = true
-            break
-        end
-        task.wait(0.2)
-    end
-
-    if not isReady then
-        print("🛑 [ERREUR] Propriétés incomplètes après 5s pour " .. animal.Name)
-        return
-    end
-
-    -- 3. On capture la mutation avec un check de visibilité
-    local actualMutation = "Default"
-    if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
-        actualMutation = mutationObj.Text
-    end
-
-    -- 4. Construction de la table et envoi
-    print("✅ [OK] Tout est chargé pour " .. displayObj.Text)
-
-    local animalData = {
-        Instance = animal,
-        DisplayName = displayObj.Text,
-        Mutation = actualMutation,
-        Generation = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "1",
-        Price = priceObj.Text,
-        Rarity = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
-        Prompt = prompt
-    }
-    
-    OnBrainrotSpawn(animalData)
-end)
 task.spawn(connectWS)

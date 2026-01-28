@@ -171,12 +171,21 @@ end
 
 function Identify()
     if ws then
+        local baseData = GetBase(myName)
         ws:Send(HttpService:JSONEncode({
             Method = "Identify",
             From = myName,
             To = "Server",
-            Data = ""
+            Data = baseData
         }))
+        if baseData then
+            ws:Send(HttpService:JSONEncode({
+                Method = "OnPlayerJoined",
+                From = myName,
+                To = "System",
+                Data = baseData
+            }))
+        end
     end
 end
 

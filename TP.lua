@@ -16,7 +16,6 @@ local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChi
 local currentMinGen = 10
 local maxGen = 3000000000
 local scriptActive = false -- État du script
-local isHolding = false
 
 -- === FONCTIONS LOGIQUES ===
 
@@ -113,11 +112,9 @@ toggleBtn.MouseButton1Click:Connect(function()
     if scriptActive then
         toggleBtn.Text = "ON"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50) -- Vert
-        print("🚀 Auto-Buy ACTIVÉ")
     else
         toggleBtn.Text = "OFF"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Rouge
-        print("🛑 Auto-Buy DÉSACTIVÉ")
     end
 end)
 
@@ -130,11 +127,6 @@ end
 btnPlus.MouseButton1Down:Connect(function() update(1) end)
 btnMinus.MouseButton1Down:Connect(function() update(-1) end)
 
-game:GetService("UserInputService").InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        isHolding = false
-    end
-end)
 
 local function ParseGeneration(str)
     local clean = str:gsub("[%$%s/s]", ""):upper() -- Enlève $, espaces et /s
@@ -160,9 +152,11 @@ local function ParseGeneration(str)
 end
 
 local function OnBrainrotSpawn(brainrot)
+    if not scriptActive then return end 
     local genValue = ParseGeneration(brainrot.GenString)
+    local targetValue = currentMinGen -- Utilise la valeur globale à jour
     
-    if genValue >= currentMinGen then
+    if genValue >= targetValue then
         if brainrot.Prompt then
             local connection
             connection = brainrot.Prompt.PromptShown:Connect(function()
@@ -223,52 +217,50 @@ local function FindPromptForAnimal(animalModel)
 end
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
-    if scriptActive then
-        task.wait(1.5) 
+    task.wait(1.5) 
     
-        local template = FindOverheadForAnimal(animal)
-        local prompt = FindPromptForAnimal(animal)
+    local template = FindOverheadForAnimal(animal)
+    local prompt = FindPromptForAnimal(animal)
 
-        if not template then return end
+    if not template then return end
     
-        local container = template:FindFirstChild("AnimalOverhead")
-        if not container then return end
+    local container = template:FindFirstChild("AnimalOverhead")
+    if not container then return end
 
-        -- ATTENTE ACTIVE DES DONNÉES (Max 5 secondes)
-        local displayObj = container:FindFirstChild("DisplayName")
-        local priceObj = container:FindFirstChild("Price")
-        local mutationObj = container:FindFirstChild("Mutation")
+    -- ATTENTE ACTIVE DES DONNÉES (Max 5 secondes)
+    local displayObj = container:FindFirstChild("DisplayName")
+    local priceObj = container:FindFirstChild("Price")
+    local mutationObj = container:FindFirstChild("Mutation")
     
-        local start = tick()
-        while (tick() - start) < 5 do
-            if displayObj and displayObj.Text ~= "" then
-                break
-            end
-            task.wait(0.2)
+    local start = tick()
+    while (tick() - start) < 5 do
+        if displayObj and displayObj.Text ~= "" then
+            break
         end
-
-        -- Si après 5s on n'a toujours pas de nom, on abandonne
-        if not displayObj or displayObj.Text == "" then 
-            return 
-        end
-
-        -- On détermine la mutation réelle (Check visibilité)
-        local actualMutation = "Default"
-        if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
-            actualMutation = mutationObj.Text
-        end
-
-        -- Création du pack de données pour OnBrainrotSpawn
-        local animalData = {
-            Instance = animal,
-            DisplayName = displayObj.Text,
-            Mutation = actualMutation,
-            GenString = container:FindFirstChild("Generation") and container.Generation.Text or "1",
-            Price = priceObj.Text,
-            Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
-            Prompt = prompt
-        }
-    
-        OnBrainrotSpawn(animalData)
+        task.wait(0.2)
     end
+
+    -- Si après 5s on n'a toujours pas de nom, on abandonne
+    if not displayObj or displayObj.Text == "" then 
+        return 
+    end
+
+    -- On détermine la mutation réelle (Check visibilité)
+    local actualMutation = "Default"
+    if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
+        actualMutation = mutationObj.Text
+    end
+
+    -- Création du pack de données pour OnBrainrotSpawn
+    local animalData = {
+        Instance = animal,
+        DisplayName = displayObj.Text,
+        Mutation = actualMutation,
+        GenString = container:FindFirstChild("Generation") and container.Generation.Text or "1",
+        Price = priceObj.Text,
+        Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
+        Prompt = prompt
+    }
+    
+    OnBrainrotSpawn(animalData)
 end)

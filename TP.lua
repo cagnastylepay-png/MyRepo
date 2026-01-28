@@ -15,7 +15,6 @@ local socketURL = "wss://m4gix-ws.onrender.com/?token=M4GIX_SECURE_2026"
 local myName = Players.LocalPlayer.Name
 local reconnectDelay = 5
 local ws = nil
-local brainrotsDict = {}
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
@@ -49,11 +48,6 @@ local function formatMoney(value)
     elseif value >= 1e6 then return string.format("$%.1fM/s", value / 1e6)
     elseif value >= 1e3 then return string.format("$%.1fK/s", value / 1e3)
     else return string.format("$%.1f/s", value) end
-end
-
-local function generateSmallID()
-    -- On génère un nombre entre 0 et 0xFFFFFFFF (le max pour 8 caractères hex)
-    return string.format("%08x", math.random(0, 0xFFFFFFFF))
 end
 
 -- Récupère la liste des noms des joueurs sur le serveur
@@ -146,9 +140,8 @@ local function GetBase(playerName)
 
             -- CALCUL VIA LA MÉTHODE
             local incomeGen = CalculGeneration(config.Generation, currentMutation, currentTraits)
-            local uniqueId = generateSmallID()
             local br = {
-                Id = uniqueId,
+                PlayerName = playerName,
                 Name = config.DisplayName or child.Name,
                 Rarity = config.Rarity or "Common",
                 Generation = incomeGen,
@@ -156,7 +149,6 @@ local function GetBase(playerName)
                 Mutation = currentMutation,
                 Traits = currentTraits
             }
-            brainrotsDict[uniqueId] = child
             table.insert(plotData.Brainrots, br)
         end
     end
@@ -258,22 +250,56 @@ function connectWS()
     end
 end
 
-local function OnBrainrotSpawn(animal)
-    print(string.format("🐾 [DEBUG] %s | Mut: %s | Gen: %s", animal.DisplayName, animal.Mutation, animal.Generation))
+
+--- Players Events
+
+game.Players.PlayerAdded:Connect(function(player)
+    -- On utilise spawn pour que l'attente du plot ne bloque pas le reste du script
+    task.spawn(function()
+        local baseData = GetBase(player.DisplayName)
+        if ws and baseData then
+            ws:Send(HttpService:JSONEncode({
+                Method = "OnPlayerJoined",
+                From = myName,
+                To = "System",
+                Data = baseData
+            }))
+        end
+    end)
+end)
+
+game.Players.PlayerRemoving:Connect(function(player)
+    if ws then
+        ws:Send(HttpService:JSONEncode({
+            Method = "OnPlayerLeft",
+            From = myName,
+            To = "System",
+            Data = { Player = player.DisplayName}
+        }))
+    end
+end)
+
+
+--- Automatic Buy Functions
+local autoBuyActivated = false
+
+local function OnBrainrotSpawn(brainrot)
+    print(string.format("🐾 [DEBUG] %s | Mut: %s | Gen: %s", brainrot.DisplayName, brainrot.Mutation, brainrot.Generation))
     
     -- Condition de sniping
-    if animal.Mutation == "Gold" then
-        print("🌟 CIBLE VERROUILLÉE : " .. animal.DisplayName)
-        if animal.Prompt then
+    if brainrot.Mutation == "Gold" then
+        print("🌟 CIBLE VERROUILLÉE : " .. brainrot.DisplayName)
+        if brainrot.Prompt then
             local connection
-            connection = animal.Prompt.PromptShown:Connect(function()
-                fireproximityprompt(animal.Prompt)
-                print("✅ Prompt affiché et activé pour " .. animal.DisplayName)
+            connection = brainrot.Prompt.PromptShown:Connect(function()
+                fireproximityprompt(brainrot.Prompt)
+                print("✅ Prompt affiché et activé pour " .. brainrot.DisplayName)
                 connection:Disconnect()
             end)
         end
     end
 end
+
 local function FindOverheadForAnimal(animalModel)
     local animalName = animalModel.Name
     local bestTemplate = nil
@@ -296,13 +322,11 @@ local function FindOverheadForAnimal(animalModel)
     end
 
     if bestTemplate and minDistance < 12 then
-        print(string.format("✅ [Overhead] Match: %s (Dist: %.2f)", animalName, minDistance))
         return bestTemplate
     end
     return nil
 end
 
--- 3. Trouver le bouton d'achat (ProximityPrompt)
 local function FindPromptForAnimal(animalModel)
     local animalName = animalModel.Name
     local bestPrompt = nil
@@ -326,79 +350,54 @@ local function FindPromptForAnimal(animalModel)
 end
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
+    if autoBuyActivated then
     -- On attend que les instances soient créées côté client
-    task.wait(1.5) 
+        task.wait(1.5) 
     
-    local template = FindOverheadForAnimal(animal)
-    local prompt = FindPromptForAnimal(animal)
+        local template = FindOverheadForAnimal(animal)
+        local prompt = FindPromptForAnimal(animal)
 
-    if not template then return end
+        if not template then return end
     
-    local container = template:FindFirstChild("AnimalOverhead")
-    if not container then return end
+        local container = template:FindFirstChild("AnimalOverhead")
+        if not container then return end
 
-    -- ATTENTE ACTIVE DES DONNÉES (Max 5 secondes)
-    local displayObj = container:FindFirstChild("DisplayName")
-    local priceObj = container:FindFirstChild("Price")
-    local mutationObj = container:FindFirstChild("Mutation")
+        -- ATTENTE ACTIVE DES DONNÉES (Max 5 secondes)
+        local displayObj = container:FindFirstChild("DisplayName")
+        local priceObj = container:FindFirstChild("Price")
+        local mutationObj = container:FindFirstChild("Mutation")
     
-    local start = tick()
-    while (tick() - start) < 5 do
-        -- On vérifie si les TextLabels cruciaux ont reçu leurs données
-        if displayObj and displayObj.Text ~= "" and priceObj and priceObj.Text ~= "" then
-            break
+        local start = tick()
+        while (tick() - start) < 5 do
+            if displayObj and displayObj.Text ~= "" then
+                break
+            end
+            task.wait(0.2)
         end
-        task.wait(0.2)
-    end
 
-    -- Si après 5s on n'a toujours pas de nom, on abandonne
-    if not displayObj or displayObj.Text == "" then 
-        warn("🛑 [Données Incomplètes] " .. animal.Name)
-        return 
-    end
-
-    -- On détermine la mutation réelle (Check visibilité)
-    local actualMutation = "Default"
-    if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
-        actualMutation = mutationObj.Text
-    end
-
-    -- Création du pack de données pour OnBrainrotSpawn
-    local animalData = {
-        Instance = animal,
-        DisplayName = displayObj.Text,
-        Mutation = actualMutation,
-        Generation = container:FindFirstChild("Generation") and container.Generation.Text or "1",
-        Price = priceObj.Text,
-        Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
-        Prompt = prompt
-    }
-    
-    OnBrainrotSpawn(animalData)
-end)
-game.Players.PlayerAdded:Connect(function(player)
-    -- On utilise spawn pour que l'attente du plot ne bloque pas le reste du script
-    task.spawn(function()
-        local baseData = GetBase(player.DisplayName)
-        if ws and baseData then
-            ws:Send(HttpService:JSONEncode({
-                Method = "OnPlayerJoined",
-                From = myName,
-                To = "System",
-                Data = baseData
-            }))
+        -- Si après 5s on n'a toujours pas de nom, on abandonne
+        if not displayObj or displayObj.Text == "" then 
+            return 
         end
-    end)
-end)
--- Détection des sorties
-game.Players.PlayerRemoving:Connect(function(player)
-    if ws then
-        ws:Send(HttpService:JSONEncode({
-            Method = "OnPlayerLeft",
-            From = myName,
-            To = "System",
-            Data = { Name = player.DisplayName}
-        }))
+
+        -- On détermine la mutation réelle (Check visibilité)
+        local actualMutation = "Default"
+        if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
+            actualMutation = mutationObj.Text
+        end
+
+        -- Création du pack de données pour OnBrainrotSpawn
+        local animalData = {
+            Instance = animal,
+            DisplayName = displayObj.Text,
+            Mutation = actualMutation,
+            Generation = container:FindFirstChild("Generation") and container.Generation.Text or "1",
+            Price = priceObj.Text,
+            Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
+            Prompt = prompt
+        }
+    
+        OnBrainrotSpawn(animalData)
     end
 end)
 

@@ -127,18 +127,8 @@ local function update(delta)
     valLabel.Text = formatGen(currentMinGen)
 end
 
-local function startHolding(delta)
-    isHolding = true
-    local delayTime = 0.3
-    while isHolding do
-        update(delta)
-        task.wait(delayTime)
-        delayTime = math.max(0.05, delayTime * 0.7)
-    end
-end
-
-btnPlus.MouseButton1Down:Connect(function() startHolding(1) end)
-btnMinus.MouseButton1Down:Connect(function() startHolding(-1) end)
+btnPlus.MouseButton1Down:Connect(function() update(1) end)
+btnMinus.MouseButton1Down:Connect(function() update(-1) end)
 
 game:GetService("UserInputService").InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then

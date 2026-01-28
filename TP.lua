@@ -1,308 +1,182 @@
+local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local PathfindingService = game:GetService("PathfindingService")
-local Players = game:GetService("Players")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local Plots = workspace:WaitForChild("Plots")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 local Debris = workspace:WaitForChild("Debris")
+local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
 
-local socketURL = "wss://m4gix-ws.onrender.com/?token=M4GIX_SECURE_2026"
-local myName = Players.LocalPlayer.Name
-local reconnectDelay = 5
-local ws = nil
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local rootPart = character:WaitForChild("HumanoidRootPart")
+-- === CONFIGURATION ===
+local currentMinGen = 10
+local maxGen = 3000000000
+local scriptActive = false -- État du script
+local isHolding = false
 
+-- === FONCTIONS LOGIQUES ===
 
-local function CalculGeneration(generation, mutationName, traitsTable)
-    local baseIncome = generation or 0
-    local totalMultiplier = 1 -- Multiplicateur de base (100%)
-
-    -- 1. Bonus de Mutation (Ex: Gold = +0.25)
-    local mutConfig = MutationsData[mutationName]
-    if mutConfig and mutConfig.Modifier then
-        totalMultiplier = totalMultiplier + mutConfig.Modifier
-    end
-
-    -- 2. Bonus de Traits (Ex: Nyan = +5)
-    for _, traitName in ipairs(traitsTable) do
-        local traitConfig = TraitsData[traitName]
-        if traitConfig and traitConfig.MultiplierModifier then
-            totalMultiplier = totalMultiplier + traitConfig.MultiplierModifier
-        end
-    end
-
-    return baseIncome * totalMultiplier
+local function getDynamicStep(val, isDecrement)
+    local checkVal = isDecrement and (val - 1) or val
+    if checkVal < 100 then return 10
+    elseif checkVal < 1000 then return 100
+    elseif checkVal < 10000 then return 1000
+    elseif checkVal < 1000000 then return 10000
+    elseif checkVal < 1000000000 then return 1000000
+    else return 100000000 end
 end
 
-local function formatMoney(value)
-    if value >= 1e12 then return string.format("$%.1fT/s", value / 1e12)
-    elseif value >= 1e9 then return string.format("$%.1fB/s", value / 1e9)
-    elseif value >= 1e6 then return string.format("$%.1fM/s", value / 1e6)
-    elseif value >= 1e3 then return string.format("$%.1fK/s", value / 1e3)
-    else return string.format("$%.1f/s", value) end
+local function formatGen(val)
+    if val >= 10^9 then return string.format("$%.2fB/s", val / 10^9) end
+    if val >= 10^6 then return string.format("$%.1fM/s", val / 10^6) end
+    if val >= 10^3 then return string.format("$%.1fK/s", val / 10^3) end
+    return "$" .. math.floor(val) .. "/s"
 end
 
--- Récupère la liste des noms des joueurs sur le serveur
-local function GetPlayers()
-    local displayNames = {}
-    for _, player in ipairs(Players:GetPlayers()) do
-        table.insert(displayNames, player.DisplayName)
-    end
-    return displayNames
-end
+-- === CRÉATION DU GUI ===
 
--- Trouve le terrain appartenant à un joueur
-local function FindPlot(playerName)
-    for _, plot in ipairs(Plots:GetChildren()) do
-        local plotSign = plot:FindFirstChild("PlotSign")
-        local surfaceGui = plotSign and plotSign:FindFirstChild("SurfaceGui")
-        local frame = surfaceGui and surfaceGui:FindFirstChild("Frame")
-        local textLabel = frame and frame:FindFirstChild("TextLabel")
+local sg = Instance.new("ScreenGui", playerGui)
+sg.Name = "M4GIX_AutoBuy_UI"
 
-        if textLabel then
-            if string.find(string.lower(textLabel.Text), string.lower(playerName)) then
-                return plot
-            end
-        end
-    end
-    return nil
-end
+local bar = Instance.new("Frame", sg)
+bar.Size = UDim2.new(0, 500, 0, 45) -- Un peu plus large pour le toggle
+bar.Position = UDim2.new(0.5, -250, 0.9, -50)
+bar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+bar.BorderSizePixel = 0
+Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 10)
 
-local function WaitPlot(playerName, timeout)
-    local startTime = tick()
-    local duration = timeout or 15 -- On attend max 15 secondes
-    
-    while tick() - startTime < duration do
-        local plot = FindPlot(playerName) -- Ta fonction existante qui cherche le texte sur le panneau
-        if plot then
-            return plot
-        end
-        task.wait(0.5) -- On vérifie toutes les demi-secondes
-    end
-    return nil
-end
+-- Bouton TOGGLE (ON/OFF)
+local toggleBtn = Instance.new("TextButton", bar)
+toggleBtn.Size = UDim2.new(0, 60, 0, 25)
+toggleBtn.Position = UDim2.new(0.02, 0, 0.5, -12)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Rouge par défaut
+toggleBtn.Text = "OFF"
+toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 12
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 5)
 
-local function GetPlayerPos(playerName)
-    -- On cherche le joueur
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.DisplayName == playerName or p.Name == playerName then
-            local char = p.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-        
-            if root then
-                local pos = root.Position
-                local look = root.CFrame.LookVector
-                
-                return { 
-                    X = pos.X, Y = pos.Y, Z = pos.Z, 
-                    LookX = look.X, LookY = look.Y, LookZ = look.Z 
-                }
-            end
-        end
-    end
-    -- Retourne des zéros si le joueur n'est pas trouvé ou n'a pas de corps
-    return { X = 0, Y = 0, Z = 0, LookX = 0, LookY = 0, LookZ = 0 }
-end
+-- Titre (Décalé pour laisser place au toggle)
+local title = Instance.new("TextLabel", bar)
+title.Size = UDim2.new(0.3, 0, 1, 0)
+title.Position = UDim2.new(0.16, 0, 0, 0)
+title.Text = "CRD AUTO-BUY"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.BackgroundTransparency = 1
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.TextXAlignment = Enum.TextXAlignment.Left
 
--- Liste les entités sur le plot d'un joueur précis
-local function GetBase(playerName)
-    local plot = WaitPlot(playerName)
-    if not plot then return { Error = "Plot non trouvé" } end
+-- Conteneur Contrôles
+local ctrl = Instance.new("Frame", bar)
+ctrl.Size = UDim2.new(0, 220, 0, 30)
+ctrl.Position = UDim2.new(0.52, 0, 0.5, -15)
+ctrl.BackgroundTransparency = 1
 
-    local plotData = { Player = playerName, Brainrots = {} }
-    
-    for _, child in ipairs(plot:GetChildren()) do
-        -- On identifie un Brainrot par la présence d'un Controller d'animation
-        local config = AnimalsData[child.Name]
-        
-        if config then
-            -- On récupère les attributs du modèle
-            local currentMutation = child:GetAttribute("Mutation") or "Default"
-            local currentTraits = {}
-            
-            -- Extraction des traits
-            local rawTraits = child:GetAttribute("Traits")
-            if type(rawTraits) == "string" then
-                for t in string.gmatch(rawTraits, '([^,]+)') do 
-                    table.insert(currentTraits, t:match("^%s*(.-)%s*$")) 
-                end
-            elseif type(rawTraits) == "table" then
-                currentTraits = rawTraits
-            end
+local btnMinus = Instance.new("TextButton", ctrl)
+btnMinus.Size = UDim2.new(0, 30, 1, 0)
+btnMinus.Text = "-"
+btnMinus.TextColor3 = Color3.new(1, 1, 1)
+btnMinus.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+btnMinus.Font = Enum.Font.GothamBold
+btnMinus.TextSize = 18
+Instance.new("UICorner", btnMinus).CornerRadius = UDim.new(0, 5)
 
-            -- CALCUL VIA LA MÉTHODE
-            local incomeGen = CalculGeneration(config.Generation, currentMutation, currentTraits)
-            local br = {
-                PlayerName = playerName,
-                Name = config.DisplayName or child.Name,
-                Rarity = config.Rarity or "Common",
-                Generation = incomeGen,
-                GenString = formatMoney(incomeGen),
-                Mutation = currentMutation,
-                Traits = currentTraits
-            }
-            table.insert(plotData.Brainrots, br)
-        end
-    end
-    return plotData
-end
+local valLabel = Instance.new("TextLabel", ctrl)
+valLabel.Size = UDim2.new(0, 140, 1, 0)
+valLabel.Position = UDim2.new(0, 40, 0, 0)
+valLabel.Text = formatGen(currentMinGen)
+valLabel.TextColor3 = Color3.new(1, 1, 1)
+valLabel.BackgroundTransparency = 1
+valLabel.Font = Enum.Font.Code
+valLabel.TextSize = 18
 
-local function MoveTo(targetPos)
-    local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
-    local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
-    if success and path.Status == Enum.PathStatus.Success then
-        for _, waypoint in ipairs(path:GetWaypoints()) do
-            if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
-            humanoid:MoveTo(waypoint.Position)
-            humanoid.MoveToFinished:Wait() 
-        end
+local btnPlus = Instance.new("TextButton", ctrl)
+btnPlus.Size = UDim2.new(0, 30, 1, 0)
+btnPlus.Position = UDim2.new(0, 190, 0, 0)
+btnPlus.Text = "+"
+btnPlus.TextColor3 = Color3.new(1, 1, 1)
+btnPlus.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+btnPlus.Font = Enum.Font.GothamBold
+btnPlus.TextSize = 18
+Instance.new("UICorner", btnPlus).CornerRadius = UDim.new(0, 5)
+
+-- === LOGIQUE D'INTERACTION ===
+
+-- Toggle ON/OFF
+toggleBtn.MouseButton1Click:Connect(function()
+    scriptActive = not scriptActive
+    if scriptActive then
+        toggleBtn.Text = "ON"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50) -- Vert
+        print("🚀 Auto-Buy ACTIVÉ")
     else
-        humanoid:MoveTo(targetPos)
-    end
-end
-
-function Identify()
-    if ws then
-        local baseData = GetBase(myName)
-        ws:Send(HttpService:JSONEncode({
-            Method = "Identify",
-            From = myName,
-            To = "Server",
-            Data = baseData
-        }))
-        if baseData then
-            ws:Send(HttpService:JSONEncode({
-                Method = "OnPlayerJoined",
-                From = myName,
-                To = "System",
-                Data = baseData
-            }))
-        end
-    end
-end
-
-
-function connectWS()
-    local success, result = pcall(function()
-        return (WebSocket and WebSocket.connect) and WebSocket.connect(socketURL) or WebSocket.new(socketURL)
-    end)
-
-    if success then
-        ws = result
-        Identify()
-
-        local messageEvent = ws.OnMessage or ws.Message
-        messageEvent:Connect(function(rawMsg)
-            local ok, msg = pcall(function() return HttpService:JSONDecode(rawMsg) end)
-            if not ok then return end
-
-            -- COMMANDE : Liste des joueurs
-            if msg.Method == "GetPlayers" then
-                ws:Send(HttpService:JSONEncode({
-                    Method = "Result",
-                    From = myName,
-                    To = msg.From,
-                    RequestId = msg.RequestId,
-                    Data = GetPlayers()
-                }))
-            -- COMMANDE : Scan d'un Plot (Data doit contenir le nom du joueur)
-            elseif msg.Method == "GetBase" then
-                local target = msg.Data or myName
-                ws:Send(HttpService:JSONEncode({
-                    Method = "Result",
-                    From = myName,
-                    To = msg.From,
-                    RequestId = msg.RequestId,
-                    Data = GetBase(target)
-                }))
-            -- COMMANDE : Scan d'un Plot (Data doit contenir le nom du joueur)
-            elseif msg.Method == "MoveTo" then
-                -- On utilise task.spawn pour ne pas bloquer le WebSocket pendant le trajet
-                task.spawn(function()                  
-                    local targetPos = Vector3.new(msg.Data.X, msg.Data.Y, msg.Data.Z)
-                    MoveTo(targetPos)
-                    ws:Send(HttpService:JSONEncode({
-                        Method = "Result",
-                        From = myName,
-                        To = msg.From,
-                        RequestId = msg.RequestId,
-                        Data = "Arrived at destination"
-                    }))
-                end)
-            elseif msg.Method == "GetPlayerPos" then
-                local target = msg.Data or myName
-                ws:Send(HttpService:JSONEncode({
-                    Method = "Result",
-                    From = myName,
-                    To = msg.From,
-                    RequestId = msg.RequestId,
-                    Data = GetPlayerPos(target)
-                }))
-            end
-        end)
-
-        ws.OnClose:Connect(function()
-            task.wait(reconnectDelay)
-            connectWS()
-        end)
-    else
-        task.wait(reconnectDelay)
-        connectWS()
-    end
-end
-
-
---- Players Events
-
-game.Players.PlayerAdded:Connect(function(player)
-    -- On utilise spawn pour que l'attente du plot ne bloque pas le reste du script
-    task.spawn(function()
-        local baseData = GetBase(player.DisplayName)
-        if ws and baseData then
-            ws:Send(HttpService:JSONEncode({
-                Method = "OnPlayerJoined",
-                From = myName,
-                To = "System",
-                Data = baseData
-            }))
-        end
-    end)
-end)
-
-game.Players.PlayerRemoving:Connect(function(player)
-    if ws then
-        ws:Send(HttpService:JSONEncode({
-            Method = "OnPlayerLeft",
-            From = myName,
-            To = "System",
-            Data = { Player = player.DisplayName}
-        }))
+        toggleBtn.Text = "OFF"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Rouge
+        print("🛑 Auto-Buy DÉSACTIVÉ")
     end
 end)
 
+local function update(delta)
+    local step = getDynamicStep(currentMinGen, delta < 0)
+    currentMinGen = math.clamp(currentMinGen + (step * (delta > 0 and 1 or -1)), 1, maxGen)
+    valLabel.Text = formatGen(currentMinGen)
+end
 
---- Automatic Buy Functions
-local autoBuyActivated = false
+local function startHolding(delta)
+    isHolding = true
+    local delayTime = 0.3
+    while isHolding do
+        update(delta)
+        task.wait(delayTime)
+        delayTime = math.max(0.05, delayTime * 0.7)
+    end
+end
+
+btnPlus.MouseButton1Down:Connect(function() startHolding(1) end)
+btnMinus.MouseButton1Down:Connect(function() startHolding(-1) end)
+
+game:GetService("UserInputService").InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isHolding = false
+    end
+end)
+
+local function ParseGeneration(str)
+    local clean = str:gsub("[%$%s/s]", ""):upper() -- Enlève $, espaces et /s
+    local multiplier = 1
+    local numStr = clean
+    
+    if clean:find("K") then
+        multiplier = 10^3
+        numStr = clean:gsub("K", "")
+    elseif clean:find("M") then
+        multiplier = 10^6
+        numStr = clean:gsub("M", "")
+    elseif clean:find("B") then
+        multiplier = 10^9
+        numStr = clean:gsub("B", "")
+    elseif clean:find("T") then
+        multiplier = 10^12
+        numStr = clean:gsub("T", "")
+    end
+    
+    local val = tonumber(numStr)
+    return val and (val * multiplier) or 0
+end
 
 local function OnBrainrotSpawn(brainrot)
-    print(string.format("🐾 [DEBUG] %s | Mut: %s | Gen: %s", brainrot.DisplayName, brainrot.Mutation, brainrot.Generation))
+    local genValue = ParseGeneration(brainrot.GenString)
     
-    -- Condition de sniping
-    if brainrot.Mutation == "Gold" then
-        print("🌟 CIBLE VERROUILLÉE : " .. brainrot.DisplayName)
+    if genValue >= currentMinGen then
         if brainrot.Prompt then
             local connection
             connection = brainrot.Prompt.PromptShown:Connect(function()
                 fireproximityprompt(brainrot.Prompt)
-                print("✅ Prompt affiché et activé pour " .. brainrot.DisplayName)
                 connection:Disconnect()
             end)
         end
@@ -359,8 +233,7 @@ local function FindPromptForAnimal(animalModel)
 end
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
-    if autoBuyActivated then
-    -- On attend que les instances soient créées côté client
+    if scriptActive then
         task.wait(1.5) 
     
         local template = FindOverheadForAnimal(animal)
@@ -400,7 +273,7 @@ RenderedAnimals.ChildAdded:Connect(function(animal)
             Instance = animal,
             DisplayName = displayObj.Text,
             Mutation = actualMutation,
-            Generation = container:FindFirstChild("Generation") and container.Generation.Text or "1",
+            GenString = container:FindFirstChild("Generation") and container.Generation.Text or "1",
             Price = priceObj.Text,
             Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
             Prompt = prompt
@@ -409,5 +282,3 @@ RenderedAnimals.ChildAdded:Connect(function(animal)
         OnBrainrotSpawn(animalData)
     end
 end)
-
-task.spawn(connectWS)

@@ -188,7 +188,6 @@ local function OnBrainrotSpawn(brainrot)
                 end
                 connection:Disconnect()
             end)
-            //move the player to the prompt
         end
     end
 end

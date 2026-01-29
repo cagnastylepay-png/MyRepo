@@ -6,7 +6,11 @@ local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 local Debris = workspace:WaitForChild("Debris")
-local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
 
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
@@ -151,18 +155,40 @@ local function ParseGeneration(str)
     return val and (val * multiplier) or 0
 end
 
+local function PrintPlayerPos()
+    if rootPart then
+        local pos = rootPart.Position                
+        print(string.format("📍Pos -> X: %.2f | Y: %.2f | Z: %.2f", pos.X, pos.Y, pos.Z))
+    end
+end
+
+local function MoveTo(targetPos)
+    local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
+    local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
+    if success and path.Status == Enum.PathStatus.Success then
+        for _, waypoint in ipairs(path:GetWaypoints()) do
+            if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+            humanoid:MoveTo(waypoint.Position)
+            humanoid.MoveToFinished:Wait() 
+        end
+    else
+        humanoid:MoveTo(targetPos)
+    end
+end
+
 local function OnBrainrotSpawn(brainrot)
-    if not scriptActive then return end 
     local genValue = ParseGeneration(brainrot.GenString)
-    local targetValue = currentMinGen -- Utilise la valeur globale à jour
     
-    if genValue >= targetValue then
+    if scriptActive and genValue >= currentMinGen then
         if brainrot.Prompt then
             local connection
             connection = brainrot.Prompt.PromptShown:Connect(function()
-                fireproximityprompt(brainrot.Prompt)
+                if scriptActive and genValue >= currentMinGen then
+                    fireproximityprompt(brainrot.Prompt)
+                end
                 connection:Disconnect()
             end)
+            //move the player to the prompt
         end
     end
 end
@@ -217,6 +243,7 @@ local function FindPromptForAnimal(animalModel)
 end
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
+    PrintPlayerPos()
     task.wait(1.5) 
     
     local template = FindOverheadForAnimal(animal)

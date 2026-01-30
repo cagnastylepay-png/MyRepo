@@ -140,7 +140,7 @@ end
 local function GetPlayerInfos(player)
     local p = player or Players.LocalPlayer
     
-    local stats = p:FindFirstChild("leaderstats")
+    local stats = player:WaitForChild("leaderstats", 10)
     if not stats then return nil end
 
     return {

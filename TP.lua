@@ -118,7 +118,53 @@ local function GetPlayerInfos(player)
     }
 end
 
--- ... (Le reste de tes fonctions connectWS, ServerInfos, etc. restent identiques)
+local function GetServerInfos()
+    local playersInfos = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        playersInfos[player.Name] = GetPlayerInfos(player)
+    end
+
+    return {
+        ServerId = game.JobId,
+        Player = playersInfos
+    }
+end
+
+local function OnServerConnect()
+	print("Connecté au serveur WebSocket")
+    SendToServer("ServerInfos", GetServerInfos())
+end
+
+local function OnServerMessage(msg)
+	print("Message du serveur : " .. tostring(msg))
+end
+
+function connectWS()
+	print("Tentative de Connection au serveur WebSocket")
+    local success, result = pcall(function()
+        return (WebSocket and WebSocket.connect) and WebSocket.connect(serverURL) or WebSocket.new(serverURL)
+    end)
+
+    if success then
+        server = result
+        OnServerConnect()
+
+        local messageEvent = server.OnMessage or server.Message
+        messageEvent:Connect(function(rawMsg)
+            OnServerMessage(rawMsg)
+        end)
+
+        server.OnClose:Connect(function()
+            print("Connexion fermée. Tentative de reconnexion dans " .. reconnectDelay .. " secondes...")
+            task.wait(reconnectDelay)
+            connectWS()
+        end)
+    else
+        print("Échec de la connexion au serveur WebSocket. Nouvelle tentative dans " .. reconnectDelay .. " secondes...")
+        task.wait(reconnectDelay)
+        connectWS()
+    end
+end
 
 Players.PlayerAdded:Connect(function(player)
     print("📥 [EVENT] PlayerAdded: " .. player.Name)
@@ -129,6 +175,12 @@ Players.PlayerAdded:Connect(function(player)
             print("🚀 [DEBUG] Envoi PlayerAdded vers le serveur...")
             SendToServer("PlayerAdded", info)
         end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    task.spawn(function()
+        SendToServer("PlayerRemoving", player.Name)
     end)
 end)
 

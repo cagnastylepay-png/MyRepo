@@ -78,21 +78,24 @@ end
 
 local function GetPlayerBase(player, timeout)
     local startTime = tick()
-    local duration = timeout or 15 -- On attend max 15 secondes
+    local duration = timeout or 20 -- On augmente un peu le délai max
+    local searchName = string.lower(player.DisplayName)
     
     while tick() - startTime < duration do
-        local plot = nil
-            for _, p in ipairs(Plots:GetChildren()) do
-                local plotSign = p:FindFirstChild("PlotSign")
-                local surfaceGui = plotSign and plotSign:FindFirstChild("SurfaceGui")
-                local frame = surfaceGui and surfaceGui:FindFirstChild("Frame")
-                local textLabel = frame and frame:FindFirstChild("TextLabel")
+        for _, p in ipairs(Plots:GetChildren()) do
+            -- On cherche le propriétaire via le nom sur le panneau
+            local plotSign = p:FindFirstChild("PlotSign")
+            local surfaceGui = plotSign and plotSign:FindFirstChild("SurfaceGui")
+            local frame = surfaceGui and surfaceGui:FindFirstChild("Frame")
+            local textLabel = frame and frame:FindFirstChild("TextLabel")
 
-                if textLabel and string.find(string.lower(textLabel.Text), string.lower(player.DisplayName)) then
+            if textLabel and textLabel.Text ~= "" then
+                if string.find(string.lower(textLabel.Text), searchName) then
                     return p
                 end
             end
-        task.wait(0.5) -- On vérifie toutes les demi-secondes
+        end
+        task.wait(1) -- On attend 1s entre chaque scan pour laisser le jeu setup le plot
     end
     return nil
 end

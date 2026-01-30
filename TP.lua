@@ -146,6 +146,8 @@ local function GetPlayerInfos(player)
     return {
         DisplayName = p.DisplayName,
         Name = p.Name,
+        ServerId = game.JobId,
+        GameId = game.PlaceId,
         Cash = stats.Cash.Value or 0,
         Rebirths = stats.Rebirths.Value or 0,
         Steals = stats.Steals.Value or 0,
@@ -186,3 +188,5 @@ function connectWS()
         connectWS()
     end
 end
+
+connectWS()

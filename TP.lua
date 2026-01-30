@@ -184,7 +184,7 @@ function connectWS()
         end)
     else
         print("Échec de la connexion au serveur WebSocket. Nouvelle tentative dans " .. reconnectDelay .. " secondes...")
-        server.wait(reconnectDelay)
+        task.wait(reconnectDelay)
         connectWS()
     end
 end

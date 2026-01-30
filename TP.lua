@@ -105,6 +105,7 @@ local function GetPlayerBrainrots(player)
             end)
 
             table.insert(brainrots, {
+				Player = player.DisplayName or player.Name,
                 Name = config.DisplayName or child.Name,
                 Rarity = config.Rarity or "Common",
                 Generation = incomeGen,

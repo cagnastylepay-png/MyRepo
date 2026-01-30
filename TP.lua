@@ -145,9 +145,6 @@ local function GetPlayerInfos(player)
 
     return {
         DisplayName = p.DisplayName,
-        Name = p.Name,
-        ServerId = game.JobId,
-        GameId = game.PlaceId,
         Cash = stats.Cash.Value or 0,
         Rebirths = stats.Rebirths.Value or 0,
         Steals = stats.Steals.Value or 0,
@@ -155,10 +152,21 @@ local function GetPlayerInfos(player)
     }
 end
 
+local function GetServerInfos()
+    local playersInfos = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        playersInfos[player.Name] = GetPlayerInfos(player)
+    end
+
+    return {
+        ServerId = game.JobId,
+        Player = playerInfos
+    }
+end
 
 local function OnServerConnect()
 	print("Connecté au serveur WebSocket")
-    SendToServer("PlayerInfos", GetPlayerInfos())
+    SendToServer("ServerInfos", GetServerInfos())
 end
 
 local function OnServerMessage(msg)
@@ -191,5 +199,17 @@ function connectWS()
         connectWS()
     end
 end
+
+Players.PlayerAdded:Connect(function(player)
+    task.spawn(function()
+        SendToServer("PlayerAdded", GetPlayerInfos(player))
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    task.spawn(function()
+        SendToServer("PlayerRemoving", player.Name)
+    end)
+end)
 
 connectWS()

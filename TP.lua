@@ -161,6 +161,7 @@ local function SetupPlayer(player)
     local infos = GetPlayerInfos(player)
     SendToServer("PlayerAdded", 
     {
+		ServerId = game.JobId,
         DisplayName = infos.DisplayName,
         Name = infos.Name,
         Cash = infos.Cash,
@@ -172,7 +173,7 @@ local function SetupPlayer(player)
 end
 
 local function OnServerConnect()
-    SendToServer("ServerInfos", { ServerId = game.JobId })
+    SendToServer("ServerInfos", { Player = Players.LocalPlayer.DisplayName, ServerId = game.JobId })
 
     for _, player in ipairs(Players:GetPlayers()) do
         SetupPlayer(player)

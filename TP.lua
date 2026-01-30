@@ -11,6 +11,9 @@ local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
 
+local WatchPlot
+local SetupPlayer
+
 --- Functions Utils ---
 local function SendToServer(method, data)
     if server then
@@ -137,31 +140,32 @@ local function GetPlayerInfos(player)
     }
 end
 
-local function WatchPlot(playerInfos)
-    playerInfos.Plot.ChildAdded:Connect(function(child)
-        -- On attend un tout petit peu pour que les Attributes (Mutation, Traits) soient chargés
+WatchPlot = function(player, plot) -- Utilise 'player' et 'plot' directement
+    plot.ChildAdded:Connect(function(child)
         task.wait(0.5) 
-        
         local config = AnimalsData[child.Name]
         if config then
-            print("🐣 [WATCHER] Nouvel animal détecté : " .. child.Name)
+            print("🐣 Update: Animal ajouté")
+            SetupPlayer(player, false) -- Pas besoin de ré-attacher le watcher
         end
     end)
 
-    -- Détection Suppression d'animal
-    playerInfos.Plot.ChildRemoved:Connect(function(child)
+    plot.ChildRemoved:Connect(function(child)
         local config = AnimalsData[child.Name]
         if config then
-            print("🗑️ [WATCHER] Animal supprimé : " .. child.Name)
+            print("🗑️ Update: Animal supprimé")
+            SetupPlayer(player, false)
         end
     end)
 end
 
-local function SetupPlayer(player)
+-- 3. On définit SetupPlayer (qui peut maintenant voir WatchPlot)
+SetupPlayer = function(player, shouldWatch)
     local infos = GetPlayerInfos(player)
-    SendToServer("PlayerAdded", 
-    {
-		ServerId = game.JobId,
+    if not infos then return end
+
+    SendToServer("PlayerAdded", {
+        ServerId = game.JobId,
         DisplayName = infos.DisplayName,
         Name = infos.Name,
         Cash = infos.Cash,
@@ -169,14 +173,17 @@ local function SetupPlayer(player)
         Steals = infos.Steals,
         Brainrots = GetBrainrots(infos)
     })
-    WatchPlot(infos)
+
+    if shouldWatch and infos.Plot then
+        WatchPlot(player, infos.Plot)
+    end
 end
 
 local function OnServerConnect()
     SendToServer("ServerInfos", { Player = Players.LocalPlayer.DisplayName, ServerId = game.JobId })
 
     for _, player in ipairs(Players:GetPlayers()) do
-        SetupPlayer(player)
+        SetupPlayer(player, true)
     end
 end
 
@@ -211,7 +218,7 @@ end
 Players.PlayerAdded:Connect(function(player)
     task.wait(5) -- On laisse au jeu le temps de charger le Plot
     task.spawn(function()
-        SetupPlayer(player)
+        SetupPlayer(player, true)
     end)
 end)
 

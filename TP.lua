@@ -160,7 +160,7 @@ local function GetServerInfos()
 
     return {
         ServerId = game.JobId,
-        Player = playerInfos
+        Player = playersInfos
     }
 end
 

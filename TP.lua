@@ -176,7 +176,7 @@ function connectWS()
         OnServerConnect()
 
         local messageEvent = server.OnMessage or server.Message
-        messageEvent.OnMessage:Connect(function(rawMsg)
+        messageEvent:Connect(function(rawMsg)
             OnServerMessage(rawMsg)
         end)
 

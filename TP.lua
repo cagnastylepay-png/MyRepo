@@ -167,13 +167,15 @@ end
 
 function connectWS()
     local success, result = pcall(function()
-        return WebSocket.connect(socketURL)
+        return (WebSocket and WebSocket.connect) and WebSocket.connect(serverURL) or WebSocket.new(serverURL)
     end)
 
     if success then
         server = result
         OnServerConnect()
-        server.OnMessage:Connect(function(rawMsg)
+
+        local messageEvent = server.OnMessage or server.Message
+        messageEvent.OnMessage:Connect(function(rawMsg)
             OnServerMessage(rawMsg)
         end)
 

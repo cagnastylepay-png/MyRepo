@@ -157,7 +157,7 @@ end
 
 
 local function OnServerConnect()
-	print("Connecté au serveur WebSocket à l'URL : " .. socketURL)
+	print("Connecté au serveur WebSocket")
     SendToServer("PlayerInfos", GetPlayerInfos())
 end
 
@@ -166,6 +166,7 @@ local function OnServerMessage(msg)
 end
 
 function connectWS()
+	print("Tentative de Connection au serveur WebSocket")
     local success, result = pcall(function()
         return (WebSocket and WebSocket.connect) and WebSocket.connect(serverURL) or WebSocket.new(serverURL)
     end)

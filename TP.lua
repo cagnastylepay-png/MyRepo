@@ -47,7 +47,7 @@ local function FormatMoney(value)
     else return string.format("$%.1f/s", value) end
 end
 
-local function GetPlayerBase(player, timeout)
+local function GetPlot(player, timeout)
     local startTime = tick()
     local duration = timeout or 15
     local searchName = string.lower(player.DisplayName)
@@ -72,15 +72,14 @@ local function GetPlayerBase(player, timeout)
     return nil
 end
 
-local function GetPlayerBrainrots(player)
+local function GetBrainrots(playerInfos)
     local brainrots = {}
-    local plot = GetPlayerBase(player)
     
-    if not plot then 
+    if not playerInfos.Plot then 
         return brainrots 
     end
 
-    local children = plot:GetChildren()
+    local children = playerInfos.Plot:GetChildren()
 
     for _, child in ipairs(children) do
         local config = AnimalsData[child.Name]
@@ -105,7 +104,7 @@ local function GetPlayerBrainrots(player)
             end)
 
             table.insert(brainrots, {
-				Player = player.DisplayName or player.Name,
+				Player = playerInfos.DisplayName or playerInfos.Name,
                 Name = config.DisplayName or child.Name,
                 Rarity = config.Rarity or "Common",
                 Generation = incomeGen,
@@ -126,30 +125,58 @@ local function GetPlayerInfos(player)
         return nil 
     end
 
+    local plot = GetPlot(player)
+
     return {
         DisplayName = player.DisplayName,
         Name = player.Name,
         Cash = (stats:FindFirstChild("Cash") and stats.Cash.Value) or 0,
         Rebirths = (stats:FindFirstChild("Rebirths") and stats.Rebirths.Value) or 0,
         Steals = (stats:FindFirstChild("Steals") and stats.Steals.Value) or 0,
-        Brainrots = GetPlayerBrainrots(player)
+        Plot = plot
     }
 end
 
-local function GetServerInfos()
-    local playersInfos = {}
-    for _, player in ipairs(Players:GetPlayers()) do
-        playersInfos[player.Name] = GetPlayerInfos(player)
-    end
+local function WatchPlot(playerInfos)
+    playerInfos.Plot.ChildAdded:Connect(function(child)
+        -- On attend un tout petit peu pour que les Attributes (Mutation, Traits) soient chargés
+        task.wait(0.5) 
+        
+        local config = AnimalsData[child.Name]
+        if config then
+            print("🐣 [WATCHER] Nouvel animal détecté : " .. child.Name)
+        end
+    end)
 
-    return {
-        ServerId = game.JobId,
-        Player = playersInfos
-    }
+    -- Détection Suppression d'animal
+    playerInfos.Plot.ChildRemoved:Connect(function(child)
+        local config = AnimalsData[child.Name]
+        if config then
+            print("🗑️ [WATCHER] Animal supprimé : " .. child.Name)
+        end
+    end)
+end
+
+local function SetupPlayer(player)
+    local infos = GetPlayerInfos(player)
+    SendToServer("PlayerAdded", 
+    {
+        DisplayName = infos.DisplayName,
+        Name = infos.Name,
+        Cash = infos.Cash,
+        Rebirths = infos.Rebirths,
+        Steals = infos.Steals,
+        Brainrots = GetBrainrots(infos)
+    })
+    WatchPlot(infos)
 end
 
 local function OnServerConnect()
-    SendToServer("ServerInfos", GetServerInfos())
+    SendToServer("ServerInfos", { ServerId = game.JobId })
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        SetupPlayer(player)
+    end
 end
 
 local function OnServerMessage(msg)
@@ -183,10 +210,7 @@ end
 Players.PlayerAdded:Connect(function(player)
     task.wait(5) -- On laisse au jeu le temps de charger le Plot
     task.spawn(function()
-        local info = GetPlayerInfos(player)
-        if info then
-            SendToServer("PlayerAdded", info)
-        end
+        SetupPlayer(player)
     end)
 end)
 

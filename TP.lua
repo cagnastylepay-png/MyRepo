@@ -18,6 +18,35 @@ local function SendToServer(method, data)
     end
 end
 
+local function CalculGeneration(generation, mutationName, traitsTable)
+    local baseIncome = generation or 0
+    local totalMultiplier = 1 -- Multiplicateur de base (100%)
+
+    -- 1. Bonus de Mutation (Ex: Gold = +0.25)
+    local mutConfig = MutationsData[mutationName]
+    if mutConfig and mutConfig.Modifier then
+        totalMultiplier = totalMultiplier + mutConfig.Modifier
+    end
+
+    -- 2. Bonus de Traits (Ex: Nyan = +5)
+    for _, traitName in ipairs(traitsTable) do
+        local traitConfig = TraitsData[traitName]
+        if traitConfig and traitConfig.MultiplierModifier then
+            totalMultiplier = totalMultiplier + traitConfig.MultiplierModifier
+        end
+    end
+
+    return baseIncome * totalMultiplier
+end
+
+local function FormatMoney(value)
+    if value >= 1e12 then return string.format("$%.1fT/s", value / 1e12)
+    elseif value >= 1e9 then return string.format("$%.1fB/s", value / 1e9)
+    elseif value >= 1e6 then return string.format("$%.1fM/s", value / 1e6)
+    elseif value >= 1e3 then return string.format("$%.1fK/s", value / 1e3)
+    else return string.format("$%.1f/s", value) end
+end
+
 local function GetPlayerBase(player, timeout)
     local startTime = tick()
     local duration = timeout or 15

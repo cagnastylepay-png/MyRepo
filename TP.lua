@@ -288,6 +288,94 @@ local function OnServerConnect()
     SendToServer("ClientInfos", { Player = Players.LocalPlayer.DisplayName, ServerId = game.JobId })
 end
 
+local function StealOrGrab(br, attempts)
+    attempts = attempts or 0
+    if attempts >= 3 then 
+        warn("⚠️ Abandon après 3 tentatives infructueuses.")
+        return false 
+    end
+
+    local character = Players.LocalPlayer.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local targetPos = br.Part:GetPivot().Position
+    MoveTo(targetPos) 
+    
+    -- Face à la vache
+    hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z))
+    
+    local bestPrompt = nil
+    local minDistance = math.huge
+    local ownerPlot = br.playerInfos and br.playerInfos.Plot
+                
+    if ownerPlot then
+        for _, item in ipairs(ownerPlot:GetDescendants()) do
+            if item:IsA("ProximityPrompt") then
+                -- Utilisation du nom dynamique du rituel pour la flexibilité
+                local isCorrectObject = (item.ObjectText == br.Name) 
+                local isCorrectAction = (item.ActionText == "Grab" or item.ActionText == "Steal" or item.ActionText == "Prendre")
+                                
+                if isCorrectObject and isCorrectAction then
+                    local p = item.Parent
+                    local pPos = p:IsA("Attachment") and p.WorldPosition or p:IsA("BasePart") and p.Position
+                                    
+                    if pPos then
+                        local distToVacca = (pPos - targetPos).Magnitude
+                        if distToVacca < minDistance then
+                            minDistance = distToVacca
+                            bestPrompt = item
+                        end
+                    end
+                end
+            end
+        end
+    end
+                
+    if bestPrompt then
+        print("🎯 Prompt localisé : " .. bestPrompt.ActionText)
+        local finalLook = bestPrompt.Parent
+        local lookPos = finalLook:IsA("Attachment") and finalLook.WorldPosition or finalLook.Position
+        
+        -- Orientation vers le point d'interaction exact
+        hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(lookPos.X, hrp.Position.Y, lookPos.Z))
+        task.wait(0.3)
+        
+        fireproximityprompt(bestPrompt)
+        print("⚡ Tentative d'action : " .. bestPrompt.ActionText)
+
+        -- --- VÉRIFICATION ---
+        local success = false
+        local timeout = 4
+        local startTick = tick()
+
+        repeat
+            -- Vérification sur le Character (selon ton screen Dex)
+            local isStealing = Players.LocalPlayer:GetAttribute("Stealing") 
+            -- Alternative : vérifier si l'attribut StealingIndex correspond
+            local stealingIndex = Players.LocalPlayer:GetAttribute("StealingIndex")
+
+            if isStealing == true or stealingIndex == br.Name then
+                success = true
+            else
+                task.wait(0.2)
+            end
+        until success or (tick() - startTick > timeout)
+
+        if success then
+            print("✅ Possession confirmée !")
+            return true
+        else
+            warn("🔄 Échec de détection, nouvelle tentative... (" .. attempts + 1 .. "/3)")
+            task.wait(1)
+            return StealOrGrab(br, attempts + 1)
+        end
+    else
+        warn("❌ Aucun prompt valide trouvé sur le plot.")
+        return false
+    end
+end
+
 local function OnServerMessage(rawMsg)
 	local success, data = pcall(function()
         return HttpService:JSONDecode(rawMsg)
@@ -309,66 +397,9 @@ local function OnServerMessage(rawMsg)
 	        print("✨ Phase : " .. tostring(data.Param.ClientNumber))
 	        
 	        local br = FindBrainrotByName(data.Param.RitualName)
-            local character = Players.LocalPlayer.Character
-            local hrp = character and character:FindFirstChild("HumanoidRootPart")
-
-            if br and br.Part and hrp then
-	            -- 1. Déplacement
-	            local targetPos = br.Part:GetPivot().Position
-	            MoveTo(targetPos) 
-	            
-	            -- 2. Orientation initiale
-	            hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z))
-	
-	            -- 3. Recherche du Prompt sur le Plot spécifique
-	            local bestPrompt = nil
-				local minDistance = math.huge
-				
-				-- On récupère le plot via les infos du brainrot trouvé
-				local ownerPlot = br.playerInfos and br.playerInfos.Plot
-				
-				if ownerPlot then
-				    for _, item in ipairs(ownerPlot:GetDescendants()) do
-				        if item:IsA("ProximityPrompt") then
-				            -- On vérifie les textes du prompt
-				            local isCorrectObject = (item.ObjectText == data.Param.RitualName)
-				            local isCorrectAction = (item.ActionText == "Grab" or item.ActionText == "Steal")
-				                
-				            if isCorrectObject and isCorrectAction then
-				                -- Sécurité pour récupérer la position du Parent (Attachment ou Part)
-				                local p = item.Parent
-				                local pPos = p:IsA("Attachment") and p.WorldPosition or p:IsA("BasePart") and p.Position
-				                
-				                if pPos then
-				                    local distToVacca = (pPos - targetPos).Magnitude
-				                    if distToVacca < minDistance then
-				                        minDistance = distToVacca
-				                        bestPrompt = item
-				                    end
-				                end
-				            end
-				        end
-				    end
-				end
-				
-				if bestPrompt then
-				    print("🎯 Prompt localisé : " .. bestPrompt.ActionText)
-				    
-				    -- 1. Orientation précise vers le parent du prompt
-				    local finalLook = bestPrompt.Parent
-				    local lookPos = finalLook:IsA("Attachment") and finalLook.WorldPosition or finalLook.Position
-				    hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(lookPos.X, hrp.Position.Y, lookPos.Z))
-				    
-				    -- 2. Petit délai pour laisser la physique se stabiliser avant l'action
-				    task.wait(0.3)
-				    
-				    -- 3. Activation du prompt
-				    -- Note: fireproximityprompt est une fonction d'exploit (synapse/executor)
-				    fireproximityprompt(bestPrompt)
-				    print("⚡ Action exécutée : " .. bestPrompt.ActionText)
-				else
-				    warn("❌ Aucun prompt valide trouvé sur le plot.")
-				end
+            
+            if br and br.Part then
+	            local success = StealOrGrab(br)
 	        end
 
 	        -- On calcule l'index suivant

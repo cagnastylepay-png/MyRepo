@@ -50,6 +50,73 @@ local function FormatMoney(value)
     else return string.format("$%.1f/s", value) end
 end
 
+local function GetActiveOverheads()
+    local allOverheads = {}
+    for _, item in ipairs(game:GetService("Debris"):GetChildren()) do
+        if item.Name == "FastOverheadTemplate" and item:FindFirstChild("AnimalOverhead") then
+            table.insert(allOverheads, item)
+        end
+    end
+    return allOverheads
+end
+
+local function FindOverheadForAnimal(activeOverheads, child)
+    local overhead = nil
+    local minDistance = 12
+
+    for _, ov in ipairs(activeOverheads) do
+        local container = ov:FindFirstChild("AnimalOverhead")
+        if not container then continue end
+
+        local nameLabel = container:FindFirstChild("DisplayName")
+
+        local matchesName = nameLabel and nameLabel.Text == child.Name
+
+        if matchesName then
+            local dist = (ov.Position - child:GetPivot().Position).Magnitude
+        
+            print(string.format("🔍 [MATCH POTENTIEL] %s trouvé à %.2f studs", child.Name, dist))
+
+            if dist < minDistance then
+                overhead = ov
+                minDistance = dist
+                print("✅ [CIBLE RETENUE] Cet overhead est le plus proche pour le moment.")
+            end
+        end
+    end
+
+    if not overhead then
+        warn("⚠️ [DEBUG] Aucun overhead trouvé pour " .. child.Name .. ". Vérifie la distance ou les noms !")
+    end
+    return overhead
+end
+
+local function GetOverheadInfos(overhead)
+    if not overhead then return nil end
+    local container = overhead:FindFirstChild("AnimalOverhead")
+    if not container then return nil end
+
+    -- On récupère les textes sans attendre trop longtemps 
+    -- pour ne pas bloquer tout le script de sauvegarde.
+    local displayObj = container:FindFirstChild("DisplayName")
+    if not displayObj or displayObj.Text == "" then return nil end
+
+    local mutationObj = container:FindFirstChild("Mutation")
+    local actualMutation = "Default"
+    if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
+        actualMutation = mutationObj.Text
+    end
+
+    return {
+        DisplayName = displayObj.Text,
+        Mutation    = actualMutation,
+        Generation  = container:FindFirstChild("Generation") and container.Generation.Text or "$0/s",
+        Price       = container:FindFirstChild("Price") and container.Price.Text or "$0",
+        Rarity      = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
+        Stolen      = container:FindFirstChild("Stolen") and container.Stolen.Visible or false
+    }
+end
+
 local function GetPlot(player, timeout)
     local startTime = tick()
     local duration = timeout or 15
@@ -75,7 +142,7 @@ local function GetPlot(player, timeout)
     return nil
 end
 
-local function GetBrainrots(playerInfos)
+local function GetBrainrots(playerInfos, completeData)
     local brainrots = {}
     
     if not playerInfos.Plot then 
@@ -83,15 +150,19 @@ local function GetBrainrots(playerInfos)
     end
 
     local children = playerInfos.Plot:GetChildren()
+    local activeOverheads = GetActiveOverheads()
 
     for _, child in ipairs(children) do
         local config = AnimalsData[child.Name]
         if config then
             -- print("🐾 [DEBUG] Animal détecté : " .. child.Name)
+            local ov = FindOverheadForAnimal(activeOverheads, child)
+            local infos = GetOverheadInfos(ov)
+
             local currentMutation = child:GetAttribute("Mutation") or "Default"
             local currentTraits = {}
             local rawTraits = child:GetAttribute("Traits")
-            
+
             if type(rawTraits) == "string" then
                 for t in string.gmatch(rawTraits, '([^,]+)') do 
                     table.insert(currentTraits, t:match("^%s*(.-)%s*$")) 
@@ -106,15 +177,37 @@ local function GetBrainrots(playerInfos)
                 incomeGen = CalculGeneration(config.Generation, currentMutation, currentTraits)
             end)
 
-            table.insert(brainrots, {
-				Player = playerInfos.DisplayName or playerInfos.Name,
-                Name = config.DisplayName or child.Name,
-                Rarity = config.Rarity or "Common",
-                Generation = incomeGen,
-                GenString = (FormatMoney and FormatMoney(incomeGen)) or tostring(incomeGen),
-                Mutation = currentMutation,
-                Traits = currentTraits
-            })
+            local finalGenString = ""
+            if infos and infos.Generation and infos.Generation ~= "" then
+                finalGenString = infos.Generation -- On prend le texte exact : ex: "$1.5M/s"
+            else
+                finalGenString = (FormatMoney and FormatMoney(incomeGen)) or tostring(incomeGen)
+            end
+
+            if(completeData) then
+                table.insert(brainrots, {
+                    Part = child,
+				    Player = playerInfos.DisplayName or playerInfos.Name,
+                    playerInfos = playerInfos,
+                    Name = config.DisplayName or child.Name,
+                    Rarity = config.Rarity or "Common",
+                    Generation = incomeGen,
+                    GenString = finalGenString or tostring(incomeGen),
+                    Mutation = currentMutation,
+                    Traits = currentTraits,
+                    Stolen = infos and infos.Stolen or false
+                })
+            else
+                table.insert(brainrots, {
+				    Player = playerInfos.DisplayName or playerInfos.Name,
+                    Name = config.DisplayName or child.Name,
+                    Rarity = config.Rarity or "Common",
+                    Generation = incomeGen,
+                    GenString = finalGenString or tostring(incomeGen),
+                    Mutation = currentMutation,
+                    Traits = currentTraits,
+                })
+            end
         end
     end
     return brainrots
@@ -138,6 +231,25 @@ local function GetPlayerInfos(player)
         Steals = (stats:FindFirstChild("Steals") and stats.Steals.Value) or 0,
         Plot = plot
     }
+end
+
+local function FindBrainrotByName(name)
+    local searchName = string.lower(name) -- On normalise le nom pour la recherche
+
+    for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+        local infos = GetPlayerInfos(player)
+        if infos then
+            local brainrots = GetBrainrots(infos, true)
+            for _, brainrot in ipairs(brainrots) do
+                if string.lower(brainrot.Name) == searchName and not brainrot.Stolen then
+                    print(string.format("✅ [TROUVÉ] %s chez %s (Non-volé)", brainrot.Name, player.Name))
+                    return brainrot
+                end
+            end
+        end
+    end
+    warn("❌ [FindBrainrot] Aucun '" .. name .. "' légitime (non-stolen) n'a été trouvé sur le serveur.")
+    return nil
 end
 
 WatchPlot = function(player, plot) -- Utilise 'player' et 'plot' directement
@@ -171,7 +283,7 @@ SetupPlayer = function(player, shouldWatch)
         Cash = infos.Cash,
         Rebirths = infos.Rebirths,
         Steals = infos.Steals,
-        Brainrots = GetBrainrots(infos)
+        Brainrots = GetBrainrots(infos, false)
     })
 
     if shouldWatch and infos.Plot then
@@ -185,6 +297,8 @@ local function OnServerConnect()
     for _, player in ipairs(Players:GetPlayers()) do
         SetupPlayer(player, true)
     end
+
+    FindBrainrotByName("La Vacca Saturno Saturnita")
 end
 
 local function OnServerMessage(msg)

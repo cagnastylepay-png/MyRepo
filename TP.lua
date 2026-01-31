@@ -2,6 +2,7 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Plots = workspace:WaitForChild("Plots")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Debris = workspace:WaitForChild("Debris")
 
 local serverURL = "wss://m4gix-ws.onrender.com/?user=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
 local server = nil
@@ -52,43 +53,41 @@ end
 
 local function GetActiveOverheads()
     local allOverheads = {}
-    for _, item in ipairs(game:GetService("Debris"):GetChildren()) do
-        if item.Name == "FastOverheadTemplate" and item:FindFirstChild("AnimalOverhead") then
+    for _, item in ipairs(Debris:GetChildren()) do
+        if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
             table.insert(allOverheads, item)
         end
     end
     return allOverheads
 end
 
-local function FindOverheadForAnimal(activeOverheads, child)
-    local overhead = nil
-    local minDistance = 12
+local function FindOverheadForAnimal(animalModel)
+    local animalName = animalModel.Name
+    local bestTemplate = nil
+    local minDistance = math.huge
 
-    for _, ov in ipairs(activeOverheads) do
-        local container = ov:FindFirstChild("AnimalOverhead")
-        if not container then continue end
-
-        local nameLabel = container:FindFirstChild("DisplayName")
-
-        local matchesName = nameLabel and nameLabel.Text == child.Name
-
-        if matchesName then
-            local dist = (ov.Position - child:GetPivot().Position).Magnitude
-        
-            print(string.format("🔍 [MATCH POTENTIEL] %s trouvé à %.2f studs", child.Name, dist))
-
-            if dist < minDistance then
-                overhead = ov
-                minDistance = dist
-                print("✅ [CIBLE RETENUE] Cet overhead est le plus proche pour le moment.")
+    for _, item in ipairs(Debris:GetChildren()) do
+        if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
+            -- On plonge dans AnimalOverhead pour vérifier le texte
+            local container = item:FindFirstChild("AnimalOverhead")
+            local displayNameLabel = container and container:FindFirstChild("DisplayName")
+            
+            if displayNameLabel and displayNameLabel.Text == animalName then
+                local dist = (item.Position - animalModel:GetPivot().Position).Magnitude
+                print(string.format("🔍 [MATCH POTENTIEL] %s trouvé à %.2f studs", displayNameLabel, dist))
+                if dist < minDistance then
+                    minDistance = dist
+                    print("✅ [CIBLE RETENUE] Cet overhead est le plus proche pour le moment.")
+                    bestTemplate = item
+                end
             end
         end
     end
 
-    if not overhead then
-        warn("⚠️ [DEBUG] Aucun overhead trouvé pour " .. child.Name .. ". Vérifie la distance ou les noms !")
+    if bestTemplate and minDistance < 12 then
+        return bestTemplate
     end
-    return overhead
+    return nil
 end
 
 local function GetOverheadInfos(overhead)
@@ -130,7 +129,6 @@ local function GetPlot(player, timeout)
             local textLabel = frame and frame:FindFirstChild("TextLabel")
 
             if textLabel and textLabel.Text ~= "" then
-                -- print("👀 [DEBUG] Plot trouvé appartenant à : " .. textLabel.Text) -- Optionnel si trop de spam
                 if string.find(string.lower(textLabel.Text), searchName) then
                     return p
                 end
@@ -150,13 +148,12 @@ local function GetBrainrots(playerInfos, completeData)
     end
 
     local children = playerInfos.Plot:GetChildren()
-    local activeOverheads = GetActiveOverheads()
 
     for _, child in ipairs(children) do
         local config = AnimalsData[child.Name]
         if config then
             -- print("🐾 [DEBUG] Animal détecté : " .. child.Name)
-            local ov = FindOverheadForAnimal(activeOverheads, child)
+            local ov = FindOverheadForAnimal(child)
             local infos = GetOverheadInfos(ov)
 
             local currentMutation = child:GetAttribute("Mutation") or "Default"

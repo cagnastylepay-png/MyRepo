@@ -4,6 +4,7 @@ local Plots = workspace:WaitForChild("Plots")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = workspace:WaitForChild("Debris")
 local TeleportService = game:GetService("TeleportService")
+local PathfindingService = game:GetService("PathfindingService")
 
 local serverURL = "wss://m4gix-ws.onrender.com/?user=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
 local server = nil
@@ -265,9 +266,33 @@ local function UpdateDatabase()
     end
 end
 
+local function MoveTo(targetPos)
+    local character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character:WaitForChild("Humanoid")
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+
+    local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
+    local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
+    
+    if success and path.Status == Enum.PathStatus.Success then
+        local waypoints = path:GetWaypoints()
+        for _, waypoint in ipairs(waypoints) do
+            if waypoint.Action == Enum.PathWaypointAction.Jump then 
+                humanoid.Jump = true 
+            end
+            humanoid:MoveTo(waypoint.Position)
+            -- Timeout de sécurité pour éviter de rester bloqué si un obstacle surgit
+            local finished = humanoid.MoveToFinished:Wait(5) 
+            if not finished then break end
+        end
+    else
+        humanoid:MoveTo(targetPos)
+        humanoid.MoveToFinished:Wait()
+    end
+end
+
 local function OnServerConnect()
     SendToServer("ClientInfos", { Player = Players.LocalPlayer.DisplayName, ServerId = game.JobId })
-    FindBrainrotByName("La Vacca Saturno Saturnita")
 end
 
 local function OnServerMessage(rawMsg)
@@ -290,9 +315,27 @@ local function OnServerMessage(rawMsg)
 	    if data.Param.RitualName == "La Vacca Saturno Saturnita" then
 	        print("✨ Phase : " .. tostring(data.Param.ClientNumber))
 	        
-	        -- Ton action ici
-	        task.wait(3) 
-	        
+	        local br = FindBrainrotByName("La Vacca Saturno Saturnita")
+            local character = Players.LocalPlayer.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+            if br and hrp then
+                local targetPos = br:GetPivot().Position
+                print("🚀 Déplacement vers Saturno...")
+            
+                -- Calcul de la position d'arrêt pour faire face à la vache
+                local offset = Vector3.new(4, 0, 4) -- Ajuste selon l'angle voulu
+                MoveTo(targetPos + offset) 
+
+                -- 1. Orientation précise vers la Vache
+                -- On garde le Y du joueur pour éviter qu'il ne bascule en arrière
+                hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z))
+                task.wait(1)
+                print("✅ Arrivé. Passage de relais.")
+            else
+                warn("❌ Cible 'La Vacca Saturno Saturnita' introuvable sur ce serveur.")
+            end
+
 	        -- On calcule l'index suivant
 	        local nextIndex = data.Param.ClientNumber + 1
 	        local totalClients = #data.Param.Clients

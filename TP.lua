@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 local Plots = workspace:WaitForChild("Plots")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = workspace:WaitForChild("Debris")
+local TeleportService = game:GetService("TeleportService")
 
 local serverURL = "wss://m4gix-ws.onrender.com/?user=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
 local server = nil
@@ -286,6 +287,24 @@ local function OnServerMessage(rawMsg)
         task.spawn(function()
             UpdateDatabase()
         end)
+    elseif data.Method == "Teleport" then
+        local targetJobId = data.Data and data.Data.ServerId
+    
+        if targetJobId and targetJobId ~= "" then
+            print("🌌 Ordre de téléportation vers le serveur : " .. targetJobId)
+        
+            local success, err = pcall(function()
+                -- game.PlaceId est l'ID du jeu actuel
+                -- targetJobId est le serveur spécifique à rejoindre
+                -- Players.LocalPlayer est le joueur à téléporter
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, targetJobId, Players.LocalPlayer)
+            end)
+        
+            if not success then
+                warn("❌ Erreur TeleportService : " .. tostring(err))
+            end
+        else
+            warn("❌ Téléportation avortée : Aucun ServerId valide reçu.")
     end
 end
 
@@ -314,3 +333,4 @@ function connectWS()
 end
 
 connectWS()
+

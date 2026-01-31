@@ -287,22 +287,22 @@ local function OnServerMessage(rawMsg)
     elseif data.Method == "Teleport" then
         local targetJobId = data.Data and data.Data.ServerId
     
-        if targetJobId and targetJobId ~= "" then
-            print("🌌 Ordre de téléportation vers le serveur : " .. targetJobId)
-        
-            local success, err = pcall(function()
-                -- game.PlaceId est l'ID du jeu actuel
-                -- targetJobId est le serveur spécifique à rejoindre
-                -- Players.LocalPlayer est le joueur à téléporter
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, targetJobId, Players.LocalPlayer)
-            end)
-        
-            if not success then
-                warn("❌ Erreur TeleportService : " .. tostring(err))
-            end
-        else
-            warn("❌ Téléportation avortée : Aucun ServerId valide reçu.")
-        end
+	    if targetJobId and targetJobId ~= "" then
+	        print("🌌 Tentative de téléportation via TeleportAsync...")
+	        
+	        local teleportOptions = Instance.new("TeleportOptions")
+	        teleportOptions.ServerInstanceId = targetJobId
+	        
+	        local success, result = pcall(function()
+	            return TeleportService:TeleportAsync(game.PlaceId, {Players.LocalPlayer}, teleportOptions)
+	        end)
+	        
+	        if not success then
+	            warn("❌ Erreur TeleportAsync : " .. tostring(result))
+	        end
+	    else
+	        warn("❌ Aucun ServerId reçu.")
+	    end
     end
 end
 

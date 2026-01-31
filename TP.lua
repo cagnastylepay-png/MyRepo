@@ -287,22 +287,30 @@ local function OnServerMessage(rawMsg)
     end
 
     if data.Method == "ExecuteRitual" then
-        local requestId = data.Id -- Très important : on récupère l'Id envoyé par Node
-    
-        print("✨ Début de ma phase du rituel : " .. tostring(data.Param.name) .. " En Place : " .. tostring(data.Param.place))
-    
-        local br = FindBrainrotByName("La Vacca Saturno Saturnita")
-
-        task.wait(3) 
-    
-        -- On informe le serveur que CETTE requête est terminée
-        -- On utilise le format attendu par ton bloc ws.on('message')
-        SendToServer("RitualResponse", { 
-            RequestId = requestId, 
-            Status = "Success" 
-        })
-        print("✅ Phase terminée, signal envoyé au serveur.")
-    end
+	    if data.Param.RitualName == "La Vacca Saturno Saturnita" then
+	        print("✨ Phase : " .. tostring(data.Param.ClientNumber))
+	        
+	        -- Ton action ici
+	        task.wait(3) 
+	        
+	        -- On calcule l'index suivant
+	        local nextIndex = data.Param.ClientNumber + 1
+	        local totalClients = #data.Param.Clients
+	        
+	        -- Si l'index suivant est toujours dans la liste (Attention: JSON index 0)
+	        -- Si tu as 3 clients, les index sont 0, 1, 2. Donc nextIndex doit être < 3.
+	        if nextIndex < totalClients then
+	            SendToServer("ExecuteRitualNextClient", {
+	                RitualName = data.Param.RitualName,
+	                ClientNumber = nextIndex,
+	                Clients = data.Param.Clients
+	            })
+	            print("📦 Relais envoyé pour le client index : " .. nextIndex)
+	        else
+	            print("👑 Fin du rituel, tous les participants ont terminé !")
+	        end
+	    end
+	end
 end
 
 function connectWS()

@@ -13,9 +13,6 @@ local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
 
-local WatchPlot
-local SetupPlayer
-
 --- Functions Utils ---
 local function SendToServer(method, data)
     if server then
@@ -305,6 +302,7 @@ local function OnServerMessage(rawMsg)
             end
         else
             warn("❌ Téléportation avortée : Aucun ServerId valide reçu.")
+        end
     end
 end
 
@@ -333,4 +331,3 @@ function connectWS()
 end
 
 connectWS()
-

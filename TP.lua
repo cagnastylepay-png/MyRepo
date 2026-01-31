@@ -73,8 +73,8 @@ local function FindOverheadForAnimal(animalModel)
             local displayNameLabel = container and container:FindFirstChild("DisplayName")
             
             if displayNameLabel and displayNameLabel.Text == animalName then
-                local animalPos = child:GetPivot().Position
-				local horizontalPos = Vector3.new(animalPos.X, ov.Position.Y, animalPos.Z)
+                local animalPos = animalModel:GetPivot().Position
+				local horizontalPos = Vector3.new(animalPos.X, item.Position.Y, animalPos.Z)
 				local dist = (item.Position - horizontalPos).Magnitude            
                 print(string.format("🔍 [MATCH POTENTIEL] %s trouvé à %.2f studs", displayNameLabel.Text, dist))
                 if dist < minDistance then

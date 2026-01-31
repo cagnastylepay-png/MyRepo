@@ -250,57 +250,43 @@ local function FindBrainrotByName(name)
     return nil
 end
 
-WatchPlot = function(player, plot) -- Utilise 'player' et 'plot' directement
-    plot.ChildAdded:Connect(function(child)
-        task.wait(0.5) 
-        local config = AnimalsData[child.Name]
-        if config then
-            print("🐣 Update: Animal ajouté")
-            SetupPlayer(player, false) -- Pas besoin de ré-attacher le watcher
-        end
-    end)
+local function UpdateDatabase()
+    for _, player in ipairs(Players:GetPlayers()) do
+        local infos = GetPlayerInfos(player)
+        if not infos then return end
 
-    plot.ChildRemoved:Connect(function(child)
-        local config = AnimalsData[child.Name]
-        if config then
-            print("🗑️ Update: Animal supprimé")
-            SetupPlayer(player, false)
-        end
-    end)
-end
-
--- 3. On définit SetupPlayer (qui peut maintenant voir WatchPlot)
-SetupPlayer = function(player, shouldWatch)
-    local infos = GetPlayerInfos(player)
-    if not infos then return end
-
-    SendToServer("PlayerAdded", {
-        ServerId = game.JobId,
-        DisplayName = infos.DisplayName,
-        Name = infos.Name,
-        Cash = infos.Cash,
-        Rebirths = infos.Rebirths,
-        Steals = infos.Steals,
-        Brainrots = GetBrainrots(infos, false)
-    })
-
-    if shouldWatch and infos.Plot then
-        WatchPlot(player, infos.Plot)
+        SendToServer("UpdateDatabase", {
+            ServerId = game.JobId,
+            DisplayName = infos.DisplayName,
+            Name = infos.Name,
+            Cash = infos.Cash,
+            Rebirths = infos.Rebirths,
+            Steals = infos.Steals,
+            Brainrots = GetBrainrots(infos, false)
+        })
     end
 end
 
 local function OnServerConnect()
-    SendToServer("ServerInfos", { Player = Players.LocalPlayer.DisplayName, ServerId = game.JobId })
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        SetupPlayer(player, true)
-    end
-
+    SendToServer("ClientInfos", { Player = Players.LocalPlayer.DisplayName, ServerId = game.JobId })
     FindBrainrotByName("La Vacca Saturno Saturnita")
 end
 
-local function OnServerMessage(msg)
-	print("Message du serveur : " .. tostring(msg))
+local function OnServerMessage(rawMsg)
+	local success, data = pcall(function()
+        return HttpService:JSONDecode(rawMsg)
+    end)
+
+    if not success or not data then 
+        warn("⚠️ Erreur de décodage JSON :", rawMsg)
+        return 
+    end
+
+    if data.Method == "UpdateDatabase" then
+        task.spawn(function()
+            UpdateDatabase()
+        end)
+    end
 end
 
 function connectWS()
@@ -327,18 +313,4 @@ function connectWS()
     end
 end
 
-Players.PlayerAdded:Connect(function(player)
-    task.wait(5) -- On laisse au jeu le temps de charger le Plot
-    task.spawn(function()
-        SetupPlayer(player, true)
-    end)
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-    task.spawn(function()
-        SendToServer("PlayerRemoving", player.Name)
-    end)
-end)
-
--- N'oublie pas d'appeler ta fonction de démarrage
 connectWS()

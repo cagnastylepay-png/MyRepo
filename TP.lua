@@ -319,8 +319,8 @@ local function OnServerMessage(rawMsg)
             local character = Players.LocalPlayer.Character
             local hrp = character and character:FindFirstChild("HumanoidRootPart")
 
-            if br and hrp then
-                local targetPos = br:GetPivot().Position
+            if br.Part and hrp then
+                local targetPos = br.Part:GetPivot().Position
                 print("🚀 Déplacement vers Saturno...")
             
                 -- Calcul de la position d'arrêt pour faire face à la vache

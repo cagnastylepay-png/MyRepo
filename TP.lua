@@ -272,23 +272,16 @@ local function MoveTo(targetPos)
     local rootPart = character:WaitForChild("HumanoidRootPart")
 
     local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
-    local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
-    
-    if success and path.Status == Enum.PathStatus.Success then
-        local waypoints = path:GetWaypoints()
-        for _, waypoint in ipairs(waypoints) do
-            if waypoint.Action == Enum.PathWaypointAction.Jump then 
-                humanoid.Jump = true 
-            end
-            humanoid:MoveTo(waypoint.Position)
-            -- Timeout de sécurité pour éviter de rester bloqué si un obstacle surgit
-            local finished = humanoid.MoveToFinished:Wait(5) 
-            if not finished then break end
-        end
-    else
-        humanoid:MoveTo(targetPos)
-        humanoid.MoveToFinished:Wait()
-    end
+	local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
+	if success and path.Status == Enum.PathStatus.Success then
+	    for _, waypoint in ipairs(path:GetWaypoints()) do
+	        if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+	        humanoid:MoveTo(waypoint.Position)
+	        humanoid.MoveToFinished:Wait() 
+	    end
+	else
+	    humanoid:MoveTo(targetPos)
+	end
 end
 
 local function OnServerConnect()
@@ -322,14 +315,8 @@ local function OnServerMessage(rawMsg)
             if br and br.Part and hrp then
                 local targetPos = br.Part:GetPivot().Position
                 print("🚀 Déplacement vers Saturno...")
-            
-                -- Calcul de la position d'arrêt pour faire face à la vache
-                local offset = Vector3.new(4, 0, 4) -- Ajuste selon l'angle voulu
-                MoveTo(targetPos + offset) 
-
-                -- 1. Orientation précise vers la Vache
-                -- On garde le Y du joueur pour éviter qu'il ne bascule en arrière
-                hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z))
+                MoveTo(targetPos) 
+                -- hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z))
                 task.wait(1)
                 print("✅ Arrivé. Passage de relais.")
             else

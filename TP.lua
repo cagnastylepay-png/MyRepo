@@ -430,7 +430,7 @@ local function ParseGeneration(str)
 end
 
 local function OnBrainrotSpawn(brainrot)
-    local genValue = ParseGeneration(brainrot.GenString)
+    local genValue = ParseGeneration(brainrot.Generation)
     local name = brainrot.DisplayName:lower()
     local rarity = brainrot.Rarity
 

@@ -395,11 +395,27 @@ local function OnServerMessage(rawMsg)
     if data.Method == "ExecuteRitual" then
 	    if data.Param.RitualName == "La Vacca Saturno Saturnita" then
 	        print("✨ Phase : " .. tostring(data.Param.ClientNumber))
-	        
+	        local FirstPositions = { 
+			    [0] = Vector3.new(-440, -7, -40),  
+			    [1] = Vector3.new(-400, -7, -100),
+			    [2] = Vector3.new(-480, -7, -100),
+			}
+			
+			local LastPositions = { 
+			    [0] = Vector3.new(-440, -7, -60),  -- Sommet resserré
+			    [1] = Vector3.new(-420, -7, -85),  -- Droite resserrée
+			    [2] = Vector3.new(-460, -7, -85),  -- Gauche resserrée
+			}
 	        local br = FindBrainrotByName(data.Param.RitualName)
             
             if br and br.Part then
 	            local success = StealOrGrab(br)
+				if success then
+					local targetPos = br.Part:GetPivot().Position
+    				MoveTo(FirstPositions[data.Param.ClientNumber])
+					task.wait(1)
+					MoveTo(LastPositions[data.Param.ClientNumber]) 
+				end
 	        end
 
 	        -- On calcule l'index suivant

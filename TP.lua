@@ -5,10 +5,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = workspace:WaitForChild("Debris")
 local TeleportService = game:GetService("TeleportService")
 local PathfindingService = game:GetService("PathfindingService")
+local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 
 local serverURL = "wss://m4gix-ws.onrender.com/?user=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
 local server = nil
 local reconnectDelay = 5
+local autoBuyActivated = false
+local currentMinGen = 10
 
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
@@ -271,7 +274,7 @@ local function MoveTo(targetPos)
     local humanoid = character:WaitForChild("Humanoid")
     local rootPart = character:WaitForChild("HumanoidRootPart")
 
-    local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
+    local path = PathfindingService:CreatePath({AgentRadius = 8, AgentHeight = 8, AgentCanJump = true})
 	local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
 	if success and path.Status == Enum.PathStatus.Success then
 	    for _, waypoint in ipairs(path:GetWaypoints()) do
@@ -286,6 +289,58 @@ end
 
 local function OnServerConnect()
     SendToServer("ClientInfos", { Player = Players.LocalPlayer.DisplayName, ServerId = game.JobId })
+end
+
+local function FindPromptForRenderedAnimal(animalModel)
+    local animalName = animalModel.Name
+    local bestPrompt = nil
+    local minDistance = math.huge
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
+            if string.find(obj.ObjectText, animalName) then
+                local attachment = obj.Parent
+                if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
+                    local dist = (attachment.WorldCFrame.Position - animalModel:GetPivot().Position).Magnitude
+                    if dist < minDistance then
+                        minDistance = dist
+                        bestPrompt = obj
+                    end
+                end
+            end
+        end
+    end
+    return (bestPrompt and minDistance < 15) and bestPrompt or nil
+end
+
+local function FindPromptForPlotAnimal(br)
+    local bestPrompt = nil
+    local minDistance = math.huge
+    local ownerPlot = br.playerInfos and br.playerInfos.Plot
+                
+    if ownerPlot then
+        for _, item in ipairs(ownerPlot:GetDescendants()) do
+            if item:IsA("ProximityPrompt") then
+                -- Utilisation du nom dynamique du rituel pour la flexibilité
+                local isCorrectObject = (item.ObjectText == br.Name) 
+                local isCorrectAction = (item.ActionText == "Grab" or item.ActionText == "Steal" or item.ActionText == "Prendre")
+                                
+                if isCorrectObject and isCorrectAction then
+                    local p = item.Parent
+                    local pPos = p:IsA("Attachment") and p.WorldPosition or p:IsA("BasePart") and p.Position
+                                    
+                    if pPos then
+                        local distToVacca = (pPos - br.Part:GetPivot().Position).Magnitude
+                        if distToVacca < minDistance then
+                            minDistance = distToVacca
+                            bestPrompt = item
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestPrompt
 end
 
 local function StealOrGrab(br, attempts)
@@ -305,32 +360,7 @@ local function StealOrGrab(br, attempts)
     -- Face à la vache
     hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z))
     
-    local bestPrompt = nil
-    local minDistance = math.huge
-    local ownerPlot = br.playerInfos and br.playerInfos.Plot
-                
-    if ownerPlot then
-        for _, item in ipairs(ownerPlot:GetDescendants()) do
-            if item:IsA("ProximityPrompt") then
-                -- Utilisation du nom dynamique du rituel pour la flexibilité
-                local isCorrectObject = (item.ObjectText == br.Name) 
-                local isCorrectAction = (item.ActionText == "Grab" or item.ActionText == "Steal" or item.ActionText == "Prendre")
-                                
-                if isCorrectObject and isCorrectAction then
-                    local p = item.Parent
-                    local pPos = p:IsA("Attachment") and p.WorldPosition or p:IsA("BasePart") and p.Position
-                                    
-                    if pPos then
-                        local distToVacca = (pPos - targetPos).Magnitude
-                        if distToVacca < minDistance then
-                            minDistance = distToVacca
-                            bestPrompt = item
-                        end
-                    end
-                end
-            end
-        end
-    end
+    local bestPrompt = FindPromptForPlotAnimal(br)
                 
     if bestPrompt then
         print("🎯 Prompt localisé : " .. bestPrompt.ActionText)
@@ -376,6 +406,49 @@ local function StealOrGrab(br, attempts)
     end
 end
 
+local function ParseGeneration(str)
+    local clean = str:gsub("[%$%s/s]", ""):upper() -- Enlève $, espaces et /s
+    local multiplier = 1
+    local numStr = clean
+    
+    if clean:find("K") then
+        multiplier = 10^3
+        numStr = clean:gsub("K", "")
+    elseif clean:find("M") then
+        multiplier = 10^6
+        numStr = clean:gsub("M", "")
+    elseif clean:find("B") then
+        multiplier = 10^9
+        numStr = clean:gsub("B", "")
+    elseif clean:find("T") then
+        multiplier = 10^12
+        numStr = clean:gsub("T", "")
+    end
+    
+    local val = tonumber(numStr)
+    return val and (val * multiplier) or 0
+end
+
+local function OnBrainrotSpawn(brainrot)
+    local genValue = ParseGeneration(brainrot.GenString)
+    local name = brainrot.DisplayName:lower()
+    local rarity = brainrot.Rarity
+
+    if  (genValue >= currentMinGen) or 
+        (rarity == "Secret") or 
+        (rarity == "OG") or 
+        (string.find(name, "block")) then
+            
+        if brainrot.Prompt then
+            local connection
+            connection = brainrot.Prompt.PromptShown:Connect(function()
+                fireproximityprompt(brainrot.Prompt)
+                connection:Disconnect()
+            end)
+        end
+    end
+end
+
 local function OnServerMessage(rawMsg)
 	local success, data = pcall(function()
         return HttpService:JSONDecode(rawMsg)
@@ -401,12 +474,12 @@ local function OnServerMessage(rawMsg)
 			    [2] = Vector3.new(-480, -7, -100),
 			}
 			
-			local LastPositions = { 
-			    [0] = Vector3.new(-440, -7, -60),  -- Sommet resserré
-			    [1] = Vector3.new(-420, -7, -85),  -- Droite resserrée
-			    [2] = Vector3.new(-460, -7, -85),  -- Gauche resserrée
-			}
-	        local br = FindBrainrotByName(data.Param.RitualName)
+            local LastPositions = { 
+                [0] = Vector3.new(-440, -7, -65),  -- Descendu de 5 pour se rapprocher de la base
+                [1] = Vector3.new(-425, -7, -80),  -- Rapproché de 5 vers le centre (X) et le haut (Z)
+                [2] = Vector3.new(-455, -7, -80),  -- Rapproché de 5 vers le centre (X) et le haut (Z)
+            }	        
+            local br = FindBrainrotByName(data.Param.RitualName)
             
             if br and br.Part then
 	            local success = StealOrGrab(br)
@@ -436,6 +509,15 @@ local function OnServerMessage(rawMsg)
 	        end
 	    end
 	end
+
+    if data.Method == "StartAutoBuy" then
+        currentMinGen = data.Param.MinGeneration or 100000000
+        autoBuyActivated = true
+	end
+
+    if data.Method == "StopAutoBuy" then
+	    autoBuyActivated = false  
+	end
 end
 
 function connectWS()
@@ -461,5 +543,51 @@ function connectWS()
         connectWS()
     end
 end
+
+
+RenderedAnimals.ChildAdded:Connect(function(animal)
+    if autoBuyActivated then
+        task.wait(1.5) 
+    
+        local template = FindOverheadForAnimal(animal)
+        local prompt = FindPromptForRenderedAnimal(animal)
+
+        if not template then return end
+    
+        local container = template:FindFirstChild("AnimalOverhead")
+        if not container then return end
+        local displayObj = container:FindFirstChild("DisplayName")
+        local priceObj = container:FindFirstChild("Price")
+        local mutationObj = container:FindFirstChild("Mutation")
+    
+        local start = tick()
+        while (tick() - start) < 5 do
+            if displayObj and displayObj.Text ~= "" then
+                break
+            end
+            task.wait(0.2)
+        end
+
+        if not displayObj or displayObj.Text == "" then 
+            return 
+        end
+
+        local actualMutation = "Default"
+        if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
+            actualMutation = mutationObj.Text
+        end
+
+        local animalData = {
+            Instance = animal,
+            DisplayName = displayObj.Text,
+            Mutation = actualMutation,
+            Generation = container:FindFirstChild("Generation") and container.Generation.Text or "1/s",
+            Price = priceObj.Text,
+            Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
+            Prompt = prompt
+        }
+        OnBrainrotSpawn(animalData)
+    end
+end)
 
 connectWS()

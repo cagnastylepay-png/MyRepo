@@ -77,14 +77,14 @@ local function FindOverheadForAnimal(animalModel)
                 print(string.format("🔍 [MATCH POTENTIEL] %s trouvé à %.2f studs", displayNameLabel.Text, dist))
                 if dist < minDistance then
                     minDistance = dist
-                    print("✅ [CIBLE RETENUE] Cet overhead est le plus proche pour le moment.")
                     bestTemplate = item
                 end
             end
         end
     end
 
-    if bestTemplate and minDistance < 12 then
+    if bestTemplate and minDistance < 15 then
+		print(string.format("🔍 [[CIBLE RETENUE]] à %.2f studs", minDistance))
         return bestTemplate
     end
     return nil

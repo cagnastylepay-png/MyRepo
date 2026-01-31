@@ -475,9 +475,9 @@ local function OnServerMessage(rawMsg)
 			}
 			
             local LastPositions = { 
-                [0] = Vector3.new(-440, -7, -65),  -- Descendu de 5 pour se rapprocher de la base
-                [1] = Vector3.new(-425, -7, -80),  -- Rapproché de 5 vers le centre (X) et le haut (Z)
-                [2] = Vector3.new(-455, -7, -80),  -- Rapproché de 5 vers le centre (X) et le haut (Z)
+                [0] = Vector3.new(-440, -7, -70),  -- Sommet encore plus proche de la base
+                [1] = Vector3.new(-430, -7, -75),  -- À seulement 10 studs du centre X et 5 du sommet Z
+                [2] = Vector3.new(-450, -7, -75),  -- À seulement 10 studs du centre X et 5 du sommet Z
             }	        
             local br = FindBrainrotByName(data.Param.RitualName)
             

@@ -319,7 +319,7 @@ local function OnServerMessage(rawMsg)
             local character = Players.LocalPlayer.Character
             local hrp = character and character:FindFirstChild("HumanoidRootPart")
 
-            if br.Part and hrp then
+            if br and br.Part and hrp then
                 local targetPos = br.Part:GetPivot().Position
                 print("🚀 Déplacement vers Saturno...")
             

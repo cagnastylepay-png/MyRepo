@@ -284,25 +284,24 @@ local function OnServerMessage(rawMsg)
         task.spawn(function()
             UpdateDatabase()
         end)
-    elseif data.Method == "Teleport" then
-        local targetJobId = data.Data and data.Data.ServerId
+    end
+
+    if data.Method == "ExecuteRitual" then
+        local requestId = data.Id -- Très important : on récupère l'Id envoyé par Node
     
-	    if targetJobId and targetJobId ~= "" then
-	        print("🌌 Tentative de téléportation via TeleportAsync...")
-	        
-	        local teleportOptions = Instance.new("TeleportOptions")
-	        teleportOptions.ServerInstanceId = targetJobId
-	        
-	        local success, result = pcall(function()
-	            return TeleportService:TeleportAsync(game.PlaceId, {Players.LocalPlayer}, teleportOptions)
-	        end)
-	        
-	        if not success then
-	            warn("❌ Erreur TeleportAsync : " .. tostring(result))
-	        end
-	    else
-	        warn("❌ Aucun ServerId reçu.")
-	    end
+        print("✨ Début de ma phase du rituel : " .. tostring(data.Param.name) .. " En Place : " .. tostring(data.Param.place))
+    
+        local br = FindBrainrotByName("La Vacca Saturno Saturnita")
+
+        task.wait(3) 
+    
+        -- On informe le serveur que CETTE requête est terminée
+        -- On utilise le format attendu par ton bloc ws.on('message')
+        SendToServer("RitualResponse", { 
+            RequestId = requestId, 
+            Status = "Success" 
+        })
+        print("✅ Phase terminée, signal envoyé au serveur.")
     end
 end
 

@@ -74,7 +74,7 @@ local function FindOverheadForAnimal(animalModel)
             
             if displayNameLabel and displayNameLabel.Text == animalName then
                 local dist = (item.Position - animalModel:GetPivot().Position).Magnitude
-                print(string.format("🔍 [MATCH POTENTIEL] %s trouvé à %.2f studs", displayNameLabel, dist))
+                print(string.format("🔍 [MATCH POTENTIEL] %s trouvé à %.2f studs", displayNameLabel.Text, dist))
                 if dist < minDistance then
                     minDistance = dist
                     print("✅ [CIBLE RETENUE] Cet overhead est le plus proche pour le moment.")

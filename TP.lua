@@ -2,104 +2,55 @@ local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local Plots = workspace:WaitForChild("Plots")
+local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
 
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
+local character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
+local s = humanoid.WalkSpeed*1.5
+local jh = humanoid.JumpHeight*1.5
+local jp =  humanoid.JumpPower*1.5
 
--- Mise à jour automatique si le personnage réapparaît
-player.CharacterAdded:Connect(function(newCharacter)
-    character = newCharacter
-    humanoid = newCharacter:WaitForChild("Humanoid")
-    rootPart = newCharacter:WaitForChild("HumanoidRootPart")
-end)
+local savedPosition = nil
 
-local function GetPlot(targetPlayer, timeout)
-    local startTime = tick()
-    local duration = timeout or 15
-    local searchName = string.lower(targetPlayer.DisplayName)
-        
-    while tick() - startTime < duration do
-        for _, p in ipairs(Plots:GetChildren()) do
-            local plotSign = p:FindFirstChild("PlotSign")
-            local surfaceGui = plotSign and plotSign:FindFirstChild("SurfaceGui")
-            local frame = surfaceGui and surfaceGui:FindFirstChild("Frame")
-            local textLabel = frame and frame:FindFirstChild("TextLabel")
-
-            if textLabel and textLabel.Text ~= "" then
-                if string.find(string.lower(textLabel.Text), searchName) then
-                    return p
-                end
-            end
-        end
-        task.wait(1)
-    end
-    return nil
+local function Notify(title, text)
+    StarterGui:SetCore("SendNotification", {
+        Title = title;
+        Text = text;
+        Duration = 3; -- Durée de 3 secondes
+    })
 end
 
-local function MoveTo(targetPos)
-    local forcedY = -20
-    local finalTarget = Vector3.new(targetPos.X, forcedY, targetPos.Z)
-    
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 3, 
-        AgentHeight = 6, 
-        AgentCanJump = true,
-        WaypointSpacing = 4
-    })
-
-    local success, _ = pcall(function() 
-        path:ComputeAsync(rootPart.Position, finalTarget) 
-    end)
-
-    if success and path.Status == Enum.PathStatus.Success then
-        local waypoints = path:GetWaypoints()
-        
-        for _, waypoint in ipairs(waypoints) do
-            -- On force chaque point du chemin à la profondeur voulue
-            local adjustedWaypointPos = Vector3.new(waypoint.Position.X, forcedY, waypoint.Position.Z)
-            
-            humanoid:MoveTo(adjustedWaypointPos)
-
-            local reached = false
-            local startTime = tick()
-            
-            while not reached do
-                -- Vérification de distance (X et Z surtout, car Y est sous le sol)
-                if (rootPart.Position - adjustedWaypointPos).Magnitude < 4 then
-                    reached = true
-                end
-
-                -- Système de forcage si bloqué par la grille
-                if tick() - startTime > 1.5 then
-                    humanoid.Jump = true
-                    humanoid:MoveTo(adjustedWaypointPos)
-                    startTime = tick()
-                end
-                
-                task.wait(0.1)
-            end
-        end
-    else
-        -- Backup : Ligne droite forcée si le calcul de chemin échoue
-        while (rootPart.Position - finalTarget).Magnitude > 4 do
-            humanoid:MoveTo(finalTarget)
-            if not humanoid.MoveToFinished:Wait(1) then
-                humanoid.Jump = true
-            end
-            task.wait(0.1)
-        end
+-- Détection de l'appui sur la touche P
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.P then
+        savedPosition = rootPart.Position
+        Notify("Position Sauvegardée", "Ta base a été définie ici !")
     end
+end)
+
+local function MoveTo(targetPos)
+    local path = PathfindingService:CreatePath({AgentRadius = 8, AgentHeight = 8, AgentCanJump = true})
+	local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
+	if success and path.Status == Enum.PathStatus.Success then
+	    for _, waypoint in ipairs(path:GetWaypoints()) do
+            humanoid.WalkSpeed = s
+            humanoid.UseJumpPower = true
+            humanoid.JumpHeight = jh
+            humanoid.JumpPower = jp
+
+	        if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+	        humanoid:MoveTo(waypoint.Position)
+	        humanoid.MoveToFinished:Wait() 
+	    end
+	else
+	    humanoid:MoveTo(targetPos)
+	end
 end
 
 local function Init()
-    local myPlot = GetPlot(player, 20)
-    
-    if not myPlot then
-        warn("Plot introuvable pour " .. player.DisplayName)
-        return
-    end
+    savedPosition = rootPart.Position
 
     -- Optionnel : Activer automatiquement les prompts "Steal" à proximité
     ProximityPromptService.PromptShown:Connect(function(prompt)
@@ -110,14 +61,7 @@ local function Init()
 
     ProximityPromptService.PromptTriggered:Connect(function(prompt)
         if prompt.ActionText == "Steal" then
-            local targetHitbox = myPlot:FindFirstChild("Hitbox", true)
-            
-            if targetHitbox then
-                humanoid.WalkSpeed = 100
-                -- MoveTo(targetHitbox.Position)
-            else
-                warn("Hitbox introuvable dans le plot !")
-            end
+            MoveTo(savedPosition)
         end
     end)
 end

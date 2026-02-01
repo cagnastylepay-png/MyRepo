@@ -5,18 +5,17 @@ local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
-local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
-local RarityData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Rarities"))
-
+-- --- CONFIGURATION ---
 local Config = {
     AutoBuyEnabled = true,
-    MinGen = 12000000,
-    ActiveMutation = "Gold",
-    Matrix = {} -- [MutationName][RarityOrLuckyBlockName] = true/false
+    MinGenText = "12M",
+    MinGenValue = 12000000,
+    ActiveMutation = "Default",
+    Matrix = {},
+    Visible = true
 }
 
-local FILE_NAME = "CRD_AutoBuy_Matrix.json"
+local FILE_NAME = "CRD_AutoBuy_Final.json"
 
 local function Save()
     if writefile then writefile(FILE_NAME, HttpService:JSONEncode(Config)) end
@@ -29,119 +28,164 @@ local function Load()
     end
 end
 
--- --- UTILS ---
-local function ParseGeneration(str)
-    if type(str) == "number" then return str end
-    local clean = str:gsub("[%$%s/s]", ""):upper()
+-- --- PARSING INCOME ---
+local function UpdateMinGen(text)
+    Config.MinGenText = text:upper()
+    local clean = text:gsub("[%$%s/s]", ""):upper()
     local multiplier = 1
-    local numStr = clean
-    if clean:find("K") then multiplier = 10^3 numStr = clean:gsub("K", "")
-    elseif clean:find("M") then multiplier = 10^6 numStr = clean:gsub("M", "")
-    elseif clean:find("B") then multiplier = 10^9 numStr = clean:gsub("B", "")
-    elseif clean:find("T") then multiplier = 10^12 numStr = clean:gsub("T", "") end
-    local val = tonumber(numStr)
-    return val and (val * multiplier) or 0
+    if clean:find("K") then multiplier = 10^3 clean = clean:gsub("K", "")
+    elseif clean:find("M") then multiplier = 10^6 clean = clean:gsub("M", "")
+    elseif clean:find("B") then multiplier = 10^9 clean = clean:gsub("B", "")
+    elseif clean:find("T") then multiplier = 10^12 clean = clean:gsub("T", "") end
+    Config.MinGenValue = (tonumber(clean) or 0) * multiplier
+    Save()
 end
 
--- --- INTERFACE (STYLE XAML) ---
+-- --- INTERFACE ---
 local ScreenGui = Instance.new("ScreenGui", Players.LocalPlayer.PlayerGui)
-ScreenGui.Name = "CRD_AutoBuy"
+ScreenGui.Name = "CRD_AutoBuy_V2"
+ScreenGui.ResetOnSpawn = false
+
+-- Icône de réduction
+local MiniIcon = Instance.new("TextButton", ScreenGui)
+MiniIcon.Size = UDim2.new(0, 50, 0, 50)
+MiniIcon.Position = UDim2.new(0, 20, 0.5, -25)
+MiniIcon.BackgroundColor3 = Color3.new(0,0,0)
+MiniIcon.Text = "CRD"
+MiniIcon.TextColor3 = Color3.new(1,1,1)
+MiniIcon.Font = Enum.Font.SourceSansBold
+MiniIcon.TextSize = 20
+MiniIcon.Visible = false
+Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(1, 0)
 
 local MainContainer = Instance.new("Frame", ScreenGui)
-MainContainer.Size = UDim2.new(0, 800, 0, 450)
-MainContainer.Position = UDim2.new(0.5, -400, 0.5, -225)
+MainContainer.Size = UDim2.new(0, 800, 0, 480)
+MainContainer.Position = UDim2.new(0.5, -400, 0.5, -240)
 MainContainer.BackgroundTransparency = 1
 
--- Bordure Supérieure
-local TopBorder = Instance.new("Frame", MainContainer)
-TopBorder.Size = UDim2.new(1, -80, 0, 85)
-TopBorder.Position = UDim2.new(0, 40, 0, 20)
-TopBorder.BackgroundColor3 = Color3.new(0,0,0)
-Instance.new("UICorner", TopBorder).CornerRadius = UDim.new(0, 10)
+-- Bordure Principale
+local Bg = Instance.new("Frame", MainContainer)
+Bg.Size = UDim2.new(1, -80, 1, -40)
+Bg.Position = UDim2.new(0, 40, 0, 20)
+Bg.BackgroundColor3 = Color3.new(0,0,0)
+Instance.new("UICorner", Bg).CornerRadius = UDim.new(0, 10)
 
-local Title = Instance.new("TextLabel", TopBorder)
+-- HEADER
+local Title = Instance.new("TextLabel", Bg)
 Title.Text = "CRD Auto Buy"
 Title.TextColor3 = Color3.new(1,1,1)
-Title.TextSize = 18
+Title.TextSize = 22
 Title.Font = Enum.Font.SourceSansBold
-Title.Position = UDim2.new(0, 15, 0, 10)
-Title.Size = UDim2.new(0, 200, 0, 25)
+Title.Position = UDim2.new(0, 20, 0, 15)
+Title.Size = UDim2.new(0, 150, 0, 30)
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
-local StatusBtn = Instance.new("TextButton", TopBorder)
-StatusBtn.Text = Config.AutoBuyEnabled and "ON" or "OFF"
-StatusBtn.TextColor3 = Config.AutoBuyEnabled and Color3.new(0,1,0) or Color3.new(1,0,0)
-StatusBtn.Position = UDim2.new(1, -60, 0, 10)
-StatusBtn.Size = UDim2.new(0, 40, 0, 25)
-StatusBtn.BackgroundTransparency = 1
-StatusBtn.Font = Enum.Font.SourceSansBold
-StatusBtn.TextSize = 18
+-- Barre grise sous le titre
+local Divider = Instance.new("Frame", Bg)
+Divider.Size = UDim2.new(1, -40, 0, 2)
+Divider.Position = UDim2.new(0, 20, 0, 50)
+Divider.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+Divider.BorderSizePixel = 0
 
--- Barre des Mutations
-local MutContainer = Instance.new("Frame", TopBorder)
-MutContainer.Size = UDim2.new(1, -20, 0, 35)
-MutContainer.Position = UDim2.new(0, 10, 1, -40)
-MutContainer.BackgroundTransparency = 1
-local MutLayout = Instance.new("UIListLayout", MutContainer)
-MutLayout.FillDirection = Enum.FillDirection.Horizontal
-MutLayout.Padding = UDim.new(0, 8)
+-- INCOME EDITABLE
+local IncomeBox = Instance.new("TextBox", Bg)
+IncomeBox.Size = UDim2.new(0, 200, 0, 30)
+IncomeBox.Position = UDim2.new(0, 180, 0, 15)
+IncomeBox.BackgroundTransparency = 0.8
+IncomeBox.BackgroundColor3 = Color3.new(1,1,1)
+IncomeBox.Text = "Min: " .. Config.MinGenText
+IncomeBox.TextColor3 = Color3.new(1,1,1)
+IncomeBox.Font = Enum.Font.SourceSansBold
+IncomeBox.TextSize = 18
+
+IncomeBox.FocusLost:Connect(function(enter)
+    UpdateMinGen(IncomeBox.Text:gsub("Min: ", ""))
+    IncomeBox.Text = "Min: " .. Config.MinGenText
+end)
+
+-- BOUTON REDUIRE (X)
+local CloseBtn = Instance.new("TextButton", Bg)
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.new(1,0,0)
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -40, 0, 10)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Font = Enum.Font.SourceSansBold
+CloseBtn.TextSize = 24
+
+CloseBtn.MouseButton1Click:Connect(function()
+    MainContainer.Visible = false
+    MiniIcon.Visible = true
+end)
+
+MiniIcon.MouseButton1Click:Connect(function()
+    MainContainer.Visible = true
+    MiniIcon.Visible = false
+end)
+
+-- SECTIONS (2 colonnes pour les mutations)
+local MutGrid = Instance.new("Frame", Bg)
+MutGrid.Size = UDim2.new(0, 300, 1, -80)
+MutGrid.Position = UDim2.new(0, 20, 0, 70)
+MutGrid.BackgroundTransparency = 1
+
+local UIGrid = Instance.new("UIGridLayout", MutGrid)
+UIGrid.CellSize = UDim2.new(0, 140, 0, 30)
+UIGrid.CellPadding = UDim2.new(0, 10, 0, 5)
 
 local mutationsList = {
-    {n="Gold", c="#FFDE59"}, {n="Diamond", c="#25C4FE"}, {n="Bloodrot", c="#8A3B3C"},
-    {n="Rainbow", c="#ff00fb"}, {n="Candy", c="#ff46f6"}, {n="Lava", c="#ff7700"},
-    {n="Galaxy", c="#aa3cff"}, {n="YinYang", c="#FFDE59"}, {n="Radioactive", c="#68f500"}, {n="Cursed", c="#f53838"}
+    {n="Default", c="#FFFFFF"}, {n="Gold", c="#FFDE59"}, {n="Diamond", c="#25C4FE"}, 
+    {n="Bloodrot", c="#8A3B3C"}, {n="Rainbow", c="#ff00fb"}, {n="Candy", c="#ff46f6"}, 
+    {n="Lava", c="#ff7700"}, {n="Galaxy", c="#aa3cff"}, {n="YinYang", c="#FFDE59"}, 
+    {n="Radioactive", c="#68f500"}, {n="Cursed", c="#f53838"}
 }
 
-local RefreshMatrixGUI -- Forward dec
+local RefreshMatrixGUI 
 
 for _, m in pairs(mutationsList) do
-    local btn = Instance.new("TextButton", MutContainer)
+    local btn = Instance.new("TextButton", MutGrid)
     btn.Text = m.n
     btn.TextColor3 = Color3.fromHex(m.c)
     btn.Font = Enum.Font.SourceSansBold
     btn.TextSize = 16
-    btn.BackgroundTransparency = 1
-    btn.Size = UDim2.new(0, 75, 1, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     btn.MouseButton1Click:Connect(function()
         Config.ActiveMutation = m.n
         RefreshMatrixGUI()
     end)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
 end
 
--- Bordure Inférieure
-local BottomBorder = Instance.new("Frame", MainContainer)
-BottomBorder.Size = UDim2.new(1, -80, 0, 280)
-BottomBorder.Position = UDim2.new(0, 40, 0, 115)
-BottomBorder.BackgroundColor3 = Color3.new(0,0,0)
-Instance.new("UICorner", BottomBorder).CornerRadius = UDim.new(0, 10)
+-- Colonnes de droite (Raretés / Lucky)
+local RightPanel = Instance.new("Frame", Bg)
+RightPanel.Size = UDim2.new(1, -340, 1, -80)
+RightPanel.Position = UDim2.new(0, 330, 0, 70)
+RightPanel.BackgroundTransparency = 1
 
-local LeftCol = Instance.new("Frame", BottomBorder)
-LeftCol.Size = UDim2.new(0.5, -20, 1, -20)
-LeftCol.Position = UDim2.new(0, 20, 0, 10)
-LeftCol.BackgroundTransparency = 1
+local LeftCol = Instance.new("Frame", RightPanel)
+LeftCol.Size = UDim2.new(0.5, -5, 1, 0)
 Instance.new("UIListLayout", LeftCol).Padding = UDim.new(0, 2)
+LeftCol.BackgroundTransparency = 1
 
-local RightCol = Instance.new("Frame", BottomBorder)
-RightCol.Size = UDim2.new(0.5, -20, 1, -20)
-RightCol.Position = UDim2.new(0.5, 10, 0, 10)
-RightCol.BackgroundTransparency = 1
+local RightCol = Instance.new("Frame", RightPanel)
+RightCol.Size = UDim2.new(0.5, -5, 1, 0)
+RightCol.Position = UDim2.new(0.5, 5, 0, 0)
 Instance.new("UIListLayout", RightCol).Padding = UDim.new(0, 2)
+RightCol.BackgroundTransparency = 1
 
 local rarities = {"Common", "Rare", "Epic", "Legendary", "Mythic", "Brainrot God", "Secret", "OG"}
-local luckies = {"Mythic Lucky Block", "Brainrot God Lucky Block", "Secret Lucky Block", "Admin Lucky Block", "Taco Lucky Block", "Los Lucky Blocks", "Los Taco Blocks"}
+local luckies = {"Mythic Lucky Block", "Secret Lucky Block", "Admin Lucky Block", "Taco Lucky Block", "Los Lucky Blocks", "Los Taco Blocks"}
 
 local allButtons = {}
-
 local function CreateToggle(name, parent)
     local btn = Instance.new("TextButton", parent)
-    btn.Size = UDim2.new(1, 0, 0, 28)
+    btn.Size = UDim2.new(1, 0, 0, 25)
     btn.BackgroundTransparency = 1
     btn.Text = "○ " .. name
     btn.TextColor3 = Color3.new(1,1,1)
     btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 18
+    btn.TextSize = 16
     btn.TextXAlignment = Enum.TextXAlignment.Left
-    
     btn.MouseButton1Click:Connect(function()
         local m = Config.ActiveMutation
         if not Config.Matrix[m] then Config.Matrix[m] = {} end
@@ -156,7 +200,7 @@ for _, r in pairs(rarities) do CreateToggle(r, LeftCol) end
 for _, l in pairs(luckies) do CreateToggle(l, RightCol) end
 
 RefreshMatrixGUI = function()
-    Title.Text = "CRD Auto Buy [" .. Config.ActiveMutation .. "]"
+    Title.Text = "CRD [" .. Config.ActiveMutation .. "]"
     local m = Config.ActiveMutation
     for name, btn in pairs(allButtons) do
         local active = Config.Matrix[m] and Config.Matrix[m][name]
@@ -164,14 +208,6 @@ RefreshMatrixGUI = function()
         btn.TextColor3 = active and Color3.new(0, 1, 0) or Color3.new(1, 1, 1)
     end
 end
-
-StatusBtn.MouseButton1Click:Connect(function()
-    Config.AutoBuyEnabled = not Config.AutoBuyEnabled
-    StatusBtn.Text = Config.AutoBuyEnabled and "ON" or "OFF"
-    StatusBtn.TextColor3 = Config.AutoBuyEnabled and Color3.new(0,1,0) or Color3.new(1,0,0)
-    Save()
-end)
-
 -- --- LOGIQUE DE JEU ---
 
 local function ShouldIBuy(brainrot)

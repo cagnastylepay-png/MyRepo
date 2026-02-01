@@ -139,7 +139,10 @@ CloseBtn.MouseButton1Click:Connect(function()
     MainContainer.Visible = false
     MiniIcon.Visible = true
 end)
-
+MiniIcon.MouseButton1Click:Connect(function()
+    MainContainer.Visible = true
+    MiniIcon.Visible = false
+end)
 -- SECTIONS (2 colonnes pour les mutations)
 local MutGrid = Instance.new("Frame", Bg)
 MutGrid.Size = UDim2.new(0, 300, 1, -80)

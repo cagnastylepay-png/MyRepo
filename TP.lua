@@ -9,19 +9,28 @@ local character = Players.LocalPlayer.Character or Players.LocalPlayer.Character
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
 
-local s = humanoid.WalkSpeed*1.5
-local jh = humanoid.JumpHeight*1.5
-local jp =  humanoid.JumpPower*1.5
+local y = rootPart.Position.Y
 
+local function Notify(title, text)
+    StarterGui:SetCore("SendNotification", {
+        Title = title,
+        Text = text,
+        Duration = 3,
+        Button1 = "OK"
+    })
+end
 
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    
+    if input.KeyCode == Enum.KeyCode.P then
+        y = y+1
+        rootPart.Position = Vector3.new(rootPart.Position.X, y, rootPart.Position.Z)
+        Notify("Position", "X:" .. math.round(savedPosition.X) .. ", Y:" .. math.round(y) .. ", Z:" .. math.round(savedPosition.Z))
+    end
 
-task.spawn(function()
-    while true do
-        -- Ta logique rapide ici
-        if rootPart and humanoid then
-            rootPart.Position = Vector3.new(rootPart.Position.X, -20, rootPart.Position.Z)
-        end
-        
-        task.wait() -- Attend le prochain frame (très rapide, environ 0.015s)
+    if input.KeyCode == Enum.KeyCode.M then
+        y = y-1
+        rootPart.Position = Vector3.new(rootPart.Position.X, y, rootPart.Position.Z)
+        Notify("Position", "X:" .. math.round(savedPosition.X) .. ", Y:" .. math.round(y) .. ", Z:" .. math.round(savedPosition.Z))
     end
 end)

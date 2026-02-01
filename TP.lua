@@ -73,54 +73,71 @@ Instance.new("UICorner", Bg).CornerRadius = UDim.new(0, 10)
 -- HEADER
 local Title = Instance.new("TextLabel", Bg)
 Title.Text = "CRD Auto Buy"
-Title.TextColor3 = Color3.new(1,1,1)
-Title.TextSize = 22
+Title.TextColor3 = Color3.new(1, 1, 1)
 Title.Font = Enum.Font.SourceSansBold
-Title.Position = UDim2.new(0, 20, 0, 15)
-Title.Size = UDim2.new(0, 150, 0, 30)
+Title.TextSize = 20
+Title.Position = UDim2.new(0, 15, 0, 15)
+Title.Size = UDim2.new(0, 120, 0, 30)
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
--- Barre grise sous le titre
-local Divider = Instance.new("Frame", Bg)
-Divider.Size = UDim2.new(1, -40, 0, 2)
-Divider.Position = UDim2.new(0, 20, 0, 50)
-Divider.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-Divider.BorderSizePixel = 0
+-- Label pour l'Income
+local IncomeLabel = Instance.new("TextLabel", Bg)
+IncomeLabel.Text = "Minimum Income:"
+IncomeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+IncomeLabel.Font = Enum.Font.SourceSans
+IncomeLabel.TextSize = 14
+IncomeLabel.Position = UDim2.new(0, 140, 0, 15)
+IncomeLabel.Size = UDim2.new(0, 100, 0, 30)
+IncomeLabel.TextXAlignment = Enum.TextXAlignment.Right
 
--- INCOME EDITABLE
+-- TextBox pour le prix (Income)
 local IncomeBox = Instance.new("TextBox", Bg)
-IncomeBox.Size = UDim2.new(0, 200, 0, 30)
-IncomeBox.Position = UDim2.new(0, 180, 0, 15)
-IncomeBox.BackgroundTransparency = 0.8
-IncomeBox.BackgroundColor3 = Color3.new(1,1,1)
-IncomeBox.Text = "Min: " .. Config.MinGenText
-IncomeBox.TextColor3 = Color3.new(1,1,1)
-IncomeBox.Font = Enum.Font.SourceSansBold
-IncomeBox.TextSize = 18
+IncomeBox.Size = UDim2.new(0, 80, 0, 25)
+IncomeBox.Position = UDim2.new(0, 245, 0, 17)
+IncomeBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+IncomeBox.Text = Config.MinGenText
+IncomeBox.TextColor3 = Color3.fromRGB(0, 255, 0) -- Vert pour le chiffre
+IncomeBox.Font = Enum.Font.Code
+IncomeBox.TextSize = 16
+local BoxCorner = Instance.new("UICorner", IncomeBox)
+BoxCorner.CornerRadius = UDim.new(0, 4)
 
 IncomeBox.FocusLost:Connect(function(enter)
-    UpdateMinGen(IncomeBox.Text:gsub("Min: ", ""))
-    IncomeBox.Text = "Min: " .. Config.MinGenText
+    UpdateMinGen(IncomeBox.Text)
+    IncomeBox.Text = Config.MinGenText
 end)
 
--- BOUTON REDUIRE (X)
+-- Bouton START / STOP
+local StatusBtn = Instance.new("TextButton", Bg)
+StatusBtn.Size = UDim2.new(0, 80, 0, 30)
+StatusBtn.Position = UDim2.new(1, -135, 0, 15)
+StatusBtn.BackgroundColor3 = Config.AutoBuyEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+StatusBtn.Text = Config.AutoBuyEnabled and "ON" or "OFF"
+StatusBtn.TextColor3 = Color3.new(1, 1, 1)
+StatusBtn.Font = Enum.Font.SourceSansBold
+StatusBtn.TextSize = 16
+Instance.new("UICorner", StatusBtn).CornerRadius = UDim.new(0, 6)
+
+StatusBtn.MouseButton1Click:Connect(function()
+    Config.AutoBuyEnabled = not Config.AutoBuyEnabled
+    StatusBtn.Text = Config.AutoBuyEnabled and "ON" or "OFF"
+    StatusBtn.BackgroundColor3 = Config.AutoBuyEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+    Save()
+end)
+
+-- Bouton Réduire (X)
 local CloseBtn = Instance.new("TextButton", Bg)
 CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.new(1,0,0)
+CloseBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-CloseBtn.Position = UDim2.new(1, -40, 0, 10)
+CloseBtn.Position = UDim2.new(1, -40, 0, 15)
 CloseBtn.BackgroundTransparency = 1
 CloseBtn.Font = Enum.Font.SourceSansBold
-CloseBtn.TextSize = 24
+CloseBtn.TextSize = 20
 
 CloseBtn.MouseButton1Click:Connect(function()
     MainContainer.Visible = false
     MiniIcon.Visible = true
-end)
-
-MiniIcon.MouseButton1Click:Connect(function()
-    MainContainer.Visible = true
-    MiniIcon.Visible = false
 end)
 
 -- SECTIONS (2 colonnes pour les mutations)

@@ -23,7 +23,7 @@ task.spawn(function()
             humanoid.UseJumpPower = true
             humanoid.JumpHeight = jh
             humanoid.JumpPower = jp
-            rootPart.Position.Y = -20
+            rootPart.Position = Vector3.new(rootPart.Position.X, -20, rootPart.Position.Z)
         end
         
         task.wait() -- Attend le prochain frame (très rapide, environ 0.015s)

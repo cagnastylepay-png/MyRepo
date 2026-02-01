@@ -19,10 +19,6 @@ task.spawn(function()
     while true do
         -- Ta logique rapide ici
         if rootPart and humanoid then
-            humanoid.WalkSpeed = s
-            humanoid.UseJumpPower = true
-            humanoid.JumpHeight = jh
-            humanoid.JumpPower = jp
             rootPart.Position = Vector3.new(rootPart.Position.X, -20, rootPart.Position.Z)
         end
         

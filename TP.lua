@@ -255,33 +255,64 @@ local function ShouldIBuy(brainrot)
 end
 
 local function MoveTo(targetInstance, prompt)
-    local character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
+    local character = Players.LocalPlayer.Character
+    if not character then return end
     local humanoid = character:WaitForChild("Humanoid")
     local rootPart = character:WaitForChild("HumanoidRootPart")
     local hasBeenTriggered = false
-	
-	local connection
+    
+    local connection
     connection = prompt.Triggered:Connect(function()
         hasBeenTriggered = true
         if connection then connection:Disconnect() end
     end)
 
-    humanoid.WalkSpeed = 60
+    -- On remet ta vitesse de base ou on s'assure qu'elle est à 60
+    humanoid.WalkSpeed = 60 
 
-	while targetInstance and targetInstance.Parent and Config.AutoBuyEnabled and not hasBeenTriggered do
-		local targetPos = targetInstance:GetPivot().Position
-		local path = PathfindingService:CreatePath({AgentRadius = 8, AgentHeight = 8, AgentCanJump = true})
-		local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
-		if success and path.Status == Enum.PathStatus.Success then
-		    for _, waypoint in ipairs(path:GetWaypoints()) do
-		        if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
-		        humanoid:MoveTo(waypoint.Position)
-		        humanoid.MoveToFinished:Wait() 
-		    end
-		else
-		    humanoid:MoveTo(targetPos)
-		end
-	end
+    while targetInstance and targetInstance.Parent and Config.AutoBuyEnabled and not hasBeenTriggered do
+        local targetPos = targetInstance:GetPivot().Position
+        local path = PathfindingService:CreatePath({
+            AgentRadius = 3, 
+            AgentHeight = 5, 
+            AgentCanJump = true,
+            WaypointSpacing = 8 -- On espace les points car on va vite
+        })
+        
+        local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
+
+        if success and path.Status == Enum.PathStatus.Success then
+            local waypoints = path:GetWaypoints()
+            
+            -- À 60 de vitesse, on vise le point +2 pour anticiper le virage
+            for i = 2, #waypoints do
+                if hasBeenTriggered or not Config.AutoBuyEnabled then break end
+                
+                -- On saute si le waypoint actuel OU le suivant demande un saut
+                if waypoints[i].Action == Enum.PathWaypointAction.Jump then
+                    humanoid.Jump = true
+                end
+
+                -- On cible le point i (ou i+1 si disponible pour plus de fluidité)
+                local lookAheadIndex = math.min(i + 1, #waypoints)
+                humanoid:MoveTo(waypoints[lookAheadIndex].Position)
+                
+                -- Zone de tolérance large (6 studs) car à 60 speed, 3 studs se traversent en 0.05s
+                repeat
+                    task.wait()
+                    local dist = (rootPart.Position - waypoints[i].Position).Magnitude
+                until dist < 8 or (targetInstance:GetPivot().Position - targetPos).Magnitude > 5 or hasBeenTriggered
+                
+                if (targetInstance:GetPivot().Position - targetPos).Magnitude > 5 then
+                    break 
+                end
+            end
+        else
+            humanoid:MoveTo(targetInstance:GetPivot().Position)
+            task.wait(0.05)
+        end
+        task.wait() -- Refresh ultra rapide
+    end
 end
 
 

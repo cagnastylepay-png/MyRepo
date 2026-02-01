@@ -3,6 +3,7 @@ local Debris = workspace:WaitForChild("Debris")
 local PathfindingService = game:GetService("PathfindingService")
 local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))

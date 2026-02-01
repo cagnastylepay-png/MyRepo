@@ -143,6 +143,12 @@ MiniIcon.MouseButton1Click:Connect(function()
     MainContainer.Visible = true
     MiniIcon.Visible = false
 end)
+-- Barre de séparation (Grise)
+local Divider = Instance.new("Frame", Bg)
+Divider.Size = UDim2.new(1, -30, 0, 1)
+Divider.Position = UDim2.new(0, 15, 0, 55)
+Divider.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+Divider.BorderSizePixel = 0
 -- SECTIONS (2 colonnes pour les mutations)
 local MutGrid = Instance.new("Frame", Bg)
 MutGrid.Size = UDim2.new(0, 300, 1, -80)
@@ -194,7 +200,7 @@ Instance.new("UIListLayout", RightCol).Padding = UDim.new(0, 2)
 RightCol.BackgroundTransparency = 1
 
 local rarities = {"Common", "Rare", "Epic", "Legendary", "Mythic", "Brainrot God", "Secret", "OG"}
-local luckies = {"Mythic Lucky Block", "Secret Lucky Block", "Admin Lucky Block", "Taco Lucky Block", "Los Lucky Blocks", "Los Taco Blocks"}
+local luckies = {"Mythic Lucky Block","Brainrot God Lucky Block", "Secret Lucky Block", "Admin Lucky Block", "Taco Lucky Block", "Los Lucky Blocks", "Los Taco Blocks"}
 
 local allButtons = {}
 local function CreateToggle(name, parent)
@@ -248,73 +254,36 @@ local function ShouldIBuy(brainrot)
     return false
 end
 
--- [Ton code de mouvement MoveTo ici]
 local function MoveTo(targetInstance, prompt)
-    local character = Players.LocalPlayer.Character
-    if not character then return end
+    local character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
     local humanoid = character:WaitForChild("Humanoid")
     local rootPart = character:WaitForChild("HumanoidRootPart")
     local hasBeenTriggered = false
-    
-    local connection
+	
+	local connection
     connection = prompt.Triggered:Connect(function()
         hasBeenTriggered = true
         if connection then connection:Disconnect() end
     end)
 
-    -- Optimisation : On augmente un peu la vitesse pour compenser le pathfinding
-    humanoid.WalkSpeed = 22 -- Optionnel, pour être plus réactif
+    humanoid.WalkSpeed = 60
 
-    while targetInstance and targetInstance.Parent and Config.AutoBuyEnabled and not hasBeenTriggered do
-        local targetPos = targetInstance:GetPivot().Position
-        local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
-        
-        local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
-
-        if success and path.Status == Enum.PathStatus.Success then
-            local waypoints = path:GetWaypoints()
-            
-            -- On parcourt les waypoints sans attendre le 'Finished' complet
-            for i = 2, #waypoints do -- On commence à 2 pour éviter le point actuel
-                if hasBeenTriggered or not Config.AutoBuyEnabled then break end
-                
-                local waypoint = waypoints[i]
-                
-                -- Sauter si nécessaire
-                if waypoint.Action == Enum.PathWaypointAction.Jump then
-                    humanoid.Jump = true
-                end
-
-                -- Déplacement vers le point
-                humanoid:MoveTo(waypoint.Position)
-                
-                -- LA CLÉ DU SMOOTH : On attend d'être à portée du point au lieu de MoveToFinished:Wait()
-                local distanceToWaypoint = (rootPart.Position - waypoint.Position).Magnitude
-                local timeout = 0
-                while distanceToWaypoint > 3 and timeout < 1 do -- 3 studs = zone de tolérance
-                    task.wait() -- On check à chaque frame
-                    distanceToWaypoint = (rootPart.Position - waypoint.Position).Magnitude
-                    timeout = timeout + task.wait()
-                    
-                    -- Si l'animal a trop bougé, on recalcule tout le chemin
-                    if (targetInstance:GetPivot().Position - targetPos).Magnitude > 4 then
-                        break 
-                    end
-                end
-                
-                -- Si l'animal a bougé pendant qu'on marchait vers ce point précis
-                if (targetInstance:GetPivot().Position - targetPos).Magnitude > 4 then
-                    break -- Sort de la boucle waypoints pour refaire un ComputeAsync
-                end
-            end
-        else
-            -- Secours si le pathfinding échoue
-            humanoid:MoveTo(targetInstance:GetPivot().Position)
-            task.wait(0.1)
-        end
-        task.wait(0.02) -- Fréquence de rafraîchissement du chemin
-    end
+	while targetInstance and targetInstance.Parent and Config.AutoBuyEnabled and not hasBeenTriggered do
+		local targetPos = targetInstance:GetPivot().Position
+		local path = PathfindingService:CreatePath({AgentRadius = 8, AgentHeight = 8, AgentCanJump = true})
+		local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
+		if success and path.Status == Enum.PathStatus.Success then
+		    for _, waypoint in ipairs(path:GetWaypoints()) do
+		        if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+		        humanoid:MoveTo(waypoint.Position)
+		        humanoid.MoveToFinished:Wait() 
+		    end
+		else
+		    humanoid:MoveTo(targetPos)
+		end
+	end
 end
+
 
 local function ParseGeneration(str)
     local clean = str:gsub("[%$%s/s]", ""):upper() -- Enlève $, espaces et /s

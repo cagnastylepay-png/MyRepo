@@ -9,13 +9,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = {
     AutoBuyEnabled = true,
     MinGenText = "12M",
-    MinGenValue = 12000000,
+    MinGenValue = 1000000,
     ActiveMutation = "Default",
     Matrix = {},
     Visible = true
 }
 
-local FILE_NAME = "CRD_AutoBuy_Final.json"
+local FILE_NAME = "CRD_AutoBuy_V2.json"
 
 local function Save()
     if writefile then writefile(FILE_NAME, HttpService:JSONEncode(Config)) end
@@ -79,7 +79,7 @@ Title.TextSize = 20
 Title.Position = UDim2.new(0, 15, 0, 15)
 Title.Size = UDim2.new(0, 120, 0, 30)
 Title.TextXAlignment = Enum.TextXAlignment.Left
-
+Title.BackgroundTransparency = 1
 -- Label pour l'Income
 local IncomeLabel = Instance.new("TextLabel", Bg)
 IncomeLabel.Text = "Minimum Income:"
@@ -89,7 +89,7 @@ IncomeLabel.TextSize = 14
 IncomeLabel.Position = UDim2.new(0, 140, 0, 15)
 IncomeLabel.Size = UDim2.new(0, 100, 0, 30)
 IncomeLabel.TextXAlignment = Enum.TextXAlignment.Right
-
+IncomeLabel.BackgroundTransparency = 1
 -- TextBox pour le prix (Income)
 local IncomeBox = Instance.new("TextBox", Bg)
 IncomeBox.Size = UDim2.new(0, 80, 0, 25)

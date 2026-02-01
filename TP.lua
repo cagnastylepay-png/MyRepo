@@ -25,12 +25,12 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if input.KeyCode == Enum.KeyCode.P then
         y = y+1
         rootPart.Position = Vector3.new(rootPart.Position.X, y, rootPart.Position.Z)
-        Notify("Position", "X:" .. math.round(savedPosition.X) .. ", Y:" .. math.round(y) .. ", Z:" .. math.round(savedPosition.Z))
+        Notify("Position", "X:" .. math.round(rootPart.Position.X) .. ", Y:" .. math.round(rootPart.Position.Y) .. ", Z:" .. math.round(rootPart.Position.Z))
     end
 
     if input.KeyCode == Enum.KeyCode.M then
         y = y-1
         rootPart.Position = Vector3.new(rootPart.Position.X, y, rootPart.Position.Z)
-        Notify("Position", "X:" .. math.round(savedPosition.X) .. ", Y:" .. math.round(y) .. ", Z:" .. math.round(savedPosition.Z))
+        Notify("Position", "X:" .. math.round(rootPart.Position.X) .. ", Y:" .. math.round(rootPart.Position.Y) .. ", Z:" .. math.round(rootPart.Position.Z))
     end
 end)

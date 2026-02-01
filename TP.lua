@@ -113,8 +113,8 @@ local function Init()
             local targetHitbox = myPlot:FindFirstChild("Hitbox", true)
             
             if targetHitbox then
-                humanoid.WalkSpeed = 80
-                MoveTo(targetHitbox.Position)
+                humanoid.WalkSpeed = 100
+                -- MoveTo(targetHitbox.Position)
             else
                 warn("Hitbox introuvable dans le plot !")
             end

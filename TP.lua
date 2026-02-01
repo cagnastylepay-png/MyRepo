@@ -67,7 +67,7 @@ MainContainer.BackgroundTransparency = 1
 local Bg = Instance.new("Frame", MainContainer)
 Bg.Size = UDim2.new(1, -80, 1, -40)
 Bg.Position = UDim2.new(0, 40, 0, 20)
-Bg.BackgroundColor3 = Color3.new(0,0,0)
+Bg.BackgroundColor3 = Color3.fromHex("#2E2E2E")
 Instance.new("UICorner", Bg).CornerRadius = UDim.new(0, 10)
 
 -- HEADER

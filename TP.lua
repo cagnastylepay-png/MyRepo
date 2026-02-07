@@ -3,6 +3,7 @@ local Debris = workspace:WaitForChild("Debris")
 local PathfindingService = game:GetService("PathfindingService")
 local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService") -- Service nécessaire pour le drag
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- --- CONFIGURATION ---
@@ -38,6 +39,45 @@ local function Load()
     end
 end
 
+-- --- FONCTION DRAGGABLE (MOBILE & PC) ---
+local function MakeDraggable(gui)
+    local dragging
+    local dragInput
+    local dragStart
+    local startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+
+    gui.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = gui.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    gui.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
+end
+
 -- --- PARSING INCOME ---
 local function UpdateMinGen(text)
     Config.MinGenText = text:upper()
@@ -56,6 +96,7 @@ local ScreenGui = Instance.new("ScreenGui", Players.LocalPlayer.PlayerGui)
 ScreenGui.Name = "CRD_AutoBuy_V2"
 ScreenGui.ResetOnSpawn = false
 
+-- Icône Réduite (Déplaçable aussi)
 local MiniIcon = Instance.new("TextButton", ScreenGui)
 MiniIcon.Size = UDim2.new(0, 50, 0, 50)
 MiniIcon.Position = UDim2.new(0, 20, 0.5, -25)
@@ -67,17 +108,26 @@ MiniIcon.TextSize = 20
 MiniIcon.Visible = false
 Instance.new("UICorner", MiniIcon).CornerRadius = UDim.new(1, 0)
 
+-- On rend l'icône déplaçable
+MakeDraggable(MiniIcon)
+
 local MainContainer = Instance.new("Frame", ScreenGui)
-MainContainer.Size = UDim2.new(0, 800, 0, 480)
-MainContainer.Position = UDim2.new(0.5, -400, 0.5, -240)
+-- J'ai légèrement réduit la taille par défaut pour aider sur mobile (700x450 au lieu de 800x480)
+MainContainer.Size = UDim2.new(0, 700, 0, 450) 
+MainContainer.Position = UDim2.new(0.5, -350, 0.5, -225)
 MainContainer.BackgroundTransparency = 1
+MainContainer.Active = true -- Important pour le drag
+
+-- On rend le menu principal déplaçable
+MakeDraggable(MainContainer)
 
 local Bg = Instance.new("Frame", MainContainer)
-Bg.Size = UDim2.new(1, -80, 1, -40)
-Bg.Position = UDim2.new(0, 40, 0, 20)
+Bg.Size = UDim2.new(1, 0, 1, 0) -- Le Bg prend toute la place du container pour faciliter le grab
+Bg.Position = UDim2.new(0, 0, 0, 0)
 Bg.BackgroundColor3 = Color3.fromHex("#2E2E2E")
 Instance.new("UICorner", Bg).CornerRadius = UDim.new(0, 10)
 
+-- HEADER
 local Title = Instance.new("TextLabel", Bg)
 Title.Text = "CRD Auto Buy"
 Title.TextColor3 = Color3.new(1, 1, 1)
@@ -98,13 +148,14 @@ IncomeLabel.Position = UDim2.new(0, 140, 0, 15)
 IncomeLabel.Size = UDim2.new(0, 100, 0, 30)
 IncomeLabel.TextXAlignment = Enum.TextXAlignment.Right
 IncomeLabel.BackgroundTransparency = 1
+
 -- TextBox pour le prix (Income)
 local IncomeBox = Instance.new("TextBox", Bg)
 IncomeBox.Size = UDim2.new(0, 80, 0, 25)
 IncomeBox.Position = UDim2.new(0, 245, 0, 17)
 IncomeBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 IncomeBox.Text = Config.MinGenText
-IncomeBox.TextColor3 = Color3.fromRGB(0, 255, 0) -- Vert pour le chiffre
+IncomeBox.TextColor3 = Color3.fromRGB(0, 255, 0)
 IncomeBox.Font = Enum.Font.Code
 IncomeBox.TextSize = 16
 local BoxCorner = Instance.new("UICorner", IncomeBox)
@@ -115,6 +166,7 @@ IncomeBox.FocusLost:Connect(function(enter)
     IncomeBox.Text = Config.MinGenText
 end)
 
+-- Bouton Rôle
 local RoleBtn = Instance.new("TextButton", Bg)
 RoleBtn.Size = UDim2.new(0, 100, 0, 30)
 RoleBtn.Position = UDim2.new(1, -245, 0, 15)
@@ -131,6 +183,7 @@ RoleBtn.MouseButton1Click:Connect(function()
     Save()
 end)
 
+-- Bouton Status
 local StatusBtn = Instance.new("TextButton", Bg)
 StatusBtn.Size = UDim2.new(0, 80, 0, 30)
 StatusBtn.Position = UDim2.new(1, -135, 0, 15)
@@ -166,21 +219,23 @@ MiniIcon.MouseButton1Click:Connect(function()
     MainContainer.Visible = true
     MiniIcon.Visible = false
 end)
--- Barre de séparation (Grise)
+
+-- Barre de séparation
 local Divider = Instance.new("Frame", Bg)
 Divider.Size = UDim2.new(1, -30, 0, 1)
 Divider.Position = UDim2.new(0, 15, 0, 55)
 Divider.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
 Divider.BorderSizePixel = 0
--- SECTIONS (2 colonnes pour les mutations)
+
+-- SECTIONS (Mutations)
 local MutGrid = Instance.new("Frame", Bg)
 MutGrid.Size = UDim2.new(0, 300, 1, -80)
 MutGrid.Position = UDim2.new(0, 20, 0, 70)
 MutGrid.BackgroundTransparency = 1
 
 local UIGrid = Instance.new("UIGridLayout", MutGrid)
-UIGrid.CellSize = UDim2.new(0, 140, 0, 30)
-UIGrid.CellPadding = UDim2.new(0, 10, 0, 5)
+UIGrid.CellSize = UDim2.new(0, 130, 0, 30) -- Réduit un peu la largeur des cellules
+UIGrid.CellPadding = UDim2.new(0, 5, 0, 5)
 
 local mutationsList = {
     {n="Default", c="#FFFFFF"}, {n="Gold", c="#FFDE59"}, {n="Diamond", c="#25C4FE"}, 
@@ -196,7 +251,7 @@ for _, m in pairs(mutationsList) do
     btn.Text = m.n
     btn.TextColor3 = Color3.fromHex(m.c)
     btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 16
+    btn.TextSize = 14 -- Texte un peu plus petit pour mobile
     btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     btn.MouseButton1Click:Connect(function()
         Config.ActiveMutation = m.n
@@ -205,10 +260,10 @@ for _, m in pairs(mutationsList) do
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
 end
 
--- Colonnes de droite (Raretés / Lucky)
+-- Colonnes de droite
 local RightPanel = Instance.new("Frame", Bg)
-RightPanel.Size = UDim2.new(1, -340, 1, -80)
-RightPanel.Position = UDim2.new(0, 330, 0, 70)
+RightPanel.Size = UDim2.new(1, -330, 1, -80) -- Ajusté
+RightPanel.Position = UDim2.new(0, 325, 0, 70)
 RightPanel.BackgroundTransparency = 1
 
 local LeftCol = Instance.new("Frame", RightPanel)
@@ -233,7 +288,7 @@ local function CreateToggle(name, parent)
     btn.Text = "○ " .. name
     btn.TextColor3 = Color3.new(1,1,1)
     btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 16
+    btn.TextSize = 14 -- Réduit pour éviter le dépassement
     btn.TextXAlignment = Enum.TextXAlignment.Left
     btn.MouseButton1Click:Connect(function()
         local m = Config.ActiveMutation
@@ -257,21 +312,18 @@ RefreshMatrixGUI = function()
         btn.TextColor3 = active and Color3.new(0, 1, 0) or Color3.new(1, 1, 1)
     end
 end
+
 -- --- LOGIQUE DE JEU ---
 
 local function ShouldIBuy(brainrot)
     if not Config.AutoBuyEnabled then return false end
     local mut = brainrot.Mutation or "Default"
-    
-    -- Vérification Matrix (Mutation spécifique + Rareté OU Nom Lucky Block)
     if Config.Matrix[mut] then
         if Config.Matrix[mut][brainrot.Rarity] or Config.Matrix[mut][brainrot.DisplayName] then
             return true
         end
     end
-    
-    -- Backup MinGen
-    if ParseGeneration(brainrot.Generation) >= Config.MinGen then
+    if ParseGeneration(brainrot.Generation) >= Config.MinGenValue then
         return true
     end
     return false
@@ -312,24 +364,13 @@ local function MoveTo(targetInstance, prompt)
 end
 
 local function ParseGeneration(str)
-    local clean = str:gsub("[%$%s/s]", ""):upper() -- Enlève $, espaces et /s
+    local clean = str:gsub("[%$%s/s]", ""):upper()
     local multiplier = 1
     local numStr = clean
-    
-    if clean:find("K") then
-        multiplier = 10^3
-        numStr = clean:gsub("K", "")
-    elseif clean:find("M") then
-        multiplier = 10^6
-        numStr = clean:gsub("M", "")
-    elseif clean:find("B") then
-        multiplier = 10^9
-        numStr = clean:gsub("B", "")
-    elseif clean:find("T") then
-        multiplier = 10^12
-        numStr = clean:gsub("T", "")
-    end
-    
+    if clean:find("K") then multiplier = 10^3 numStr = clean:gsub("K", "")
+    elseif clean:find("M") then multiplier = 10^6 numStr = clean:gsub("M", "")
+    elseif clean:find("B") then multiplier = 10^9 numStr = clean:gsub("B", "")
+    elseif clean:find("T") then multiplier = 10^12 numStr = clean:gsub("T", "") end
     local val = tonumber(numStr)
     return val and (val * multiplier) or 0
 end
@@ -338,17 +379,14 @@ local function FindOverhead(animalModel)
     local animalName = animalModel.Name
     local bestTemplate = nil
     local minDistance = math.huge
-
     for _, item in ipairs(Debris:GetChildren()) do
         if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
-            -- On plonge dans AnimalOverhead pour vérifier le texte
             local container = item:FindFirstChild("AnimalOverhead")
             local displayNameLabel = container and container:FindFirstChild("DisplayName")
-            
             if displayNameLabel and displayNameLabel.Text == animalName then
                 local animalPos = animalModel:GetPivot().Position
-				        local horizontalPos = Vector3.new(animalPos.X, item.Position.Y, animalPos.Z)
-				        local dist = (item.Position - horizontalPos).Magnitude            
+                local horizontalPos = Vector3.new(animalPos.X, item.Position.Y, animalPos.Z)
+                local dist = (item.Position - horizontalPos).Magnitude            
                 if dist < minDistance then
                     minDistance = dist
                     bestTemplate = item
@@ -356,10 +394,7 @@ local function FindOverhead(animalModel)
             end
         end
     end
-
-    if bestTemplate and minDistance < 3 then
-		    return bestTemplate
-    end
+    if bestTemplate and minDistance < 3 then return bestTemplate end
     return nil
 end
   
@@ -367,7 +402,6 @@ local function FindPrompt(animalModel)
     local animalName = animalModel.Name
     local bestPrompt = nil
     local minDistance = math.huge
-
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
             if string.find(obj.ObjectText, animalName) then
@@ -388,13 +422,10 @@ end
 local function OnBrainrotSpawn(brainrot) 
     if ShouldIBuy(brainrot) then         
         if brainrot.Prompt then
-            -- Connexion pour l'achat
             brainrot.PromptShownConnection = brainrot.Prompt.PromptShown:Connect(function()
                 fireproximityprompt(brainrot.Prompt)
                 task.wait(0.5)
                 isBusy = false
-                
-                -- RETOUR À LA POSITION INITIALE (BASE)
                 local home = GetHomePos()
                 local char = Players.LocalPlayer.Character
                 if char and char:FindFirstChild("Humanoid") then
@@ -407,15 +438,11 @@ local function OnBrainrotSpawn(brainrot)
                     if not brainrot.Instance or not brainrot.Instance.Parent then break end
                     local pos = brainrot.Instance:GetPivot().Position
                     local canBuy = false
-
-                    -- VERIFICATION SELON LE ROLE (PLAYER 1 OU 2)
                     if Config.PlayerRole == 1 then
                         if pos.Z > 160 then canBuy = true end
                     else
-                        -- Condition J2 : X < -435 et Z < -30
                         if pos.X < -435 and pos.Z < -30 then canBuy = true end
                     end
-
                     if not isBusy and canBuy then
                         isBusy = true
                         MoveTo(brainrot.Instance, brainrot.Prompt)
@@ -429,35 +456,24 @@ end
 RenderedAnimals.ChildAdded:Connect(function(animal)
     if Config.AutoBuyEnabled then
         task.wait(1.5) 
-    
         local template = FindOverhead(animal)
         local prompt = FindPrompt(animal)
-
         if not template then return end
-    
         local container = template:FindFirstChild("AnimalOverhead")
         if not container then return end
         local displayObj = container:FindFirstChild("DisplayName")
         local priceObj = container:FindFirstChild("Price")
         local mutationObj = container:FindFirstChild("Mutation")
-    
         local start = tick()
         while (tick() - start) < 5 do
-            if displayObj and displayObj.Text ~= "" then
-                break
-            end
+            if displayObj and displayObj.Text ~= "" then break end
             task.wait(0.2)
         end
-
-        if not displayObj or displayObj.Text == "" then 
-            return 
-        end
-
+        if not displayObj or displayObj.Text == "" then return end
         local actualMutation = "Default"
         if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
             actualMutation = mutationObj.Text
         end
-
         local animalData = {
             Instance = animal,
             DisplayName = displayObj.Text,
@@ -474,20 +490,17 @@ end)
 Load()
 RefreshMatrixGUI()
 
+-- BOUCLE DE SECURITE
 task.spawn(function()
-    while task.wait(1) do -- On vérifie toutes les secondes
+    while task.wait(1) do 
         if Config.AutoBuyEnabled and not isBusy then
             local character = Players.LocalPlayer.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             local humanoid = character and character:FindFirstChild("Humanoid")
-            
             if rootPart and humanoid then
                 local homePos = GetHomePos()
                 local distance = (rootPart.Position - homePos).Magnitude
-                
-                -- Si le joueur est à plus de 5 studs de sa base sans être occupé
                 if distance > 5 then
-                    print("Déviation détectée (" .. math.floor(distance) .. " studs). Retour à la base...")
                     humanoid:MoveTo(homePos)
                 end
             end

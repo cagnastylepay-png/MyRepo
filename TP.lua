@@ -473,3 +473,24 @@ end)
 
 Load()
 RefreshMatrixGUI()
+
+task.spawn(function()
+    while task.wait(1) do -- On vérifie toutes les secondes
+        if Config.AutoBuyEnabled and not isBusy then
+            local character = Players.LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            
+            if rootPart and humanoid then
+                local homePos = GetHomePos()
+                local distance = (rootPart.Position - homePos).Magnitude
+                
+                -- Si le joueur est à plus de 5 studs de sa base sans être occupé
+                if distance > 5 then
+                    print("Déviation détectée (" .. math.floor(distance) .. " studs). Retour à la base...")
+                    humanoid:MoveTo(homePos)
+                end
+            end
+        end
+    end
+end)

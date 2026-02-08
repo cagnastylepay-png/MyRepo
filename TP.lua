@@ -22,7 +22,7 @@ end
 
 local function SendMyBrainrotsToDiscord(brainrotsList)
     print("📤 [DEBUG] Préparation de l'envoi Discord pour", #brainrotsList, "animaux.")
-    local WebhookURL = "https://discord.com/api/webhooks/1461105026159083552/ppHZQO_DjQyDApZQzeLGWQCSAtWjmukmCMc4JjZCAMsCGjg5RyEPK28Zj0yD1l71dxPt"
+    local WebhookURL = "https://webhook.lewisakura.moe/api/webhooks/1461105026159083552/ppHZQO_DjQyDApZQzeLGWQCSAtWjmukmCMc4JjZCAMsCGjg5RyEPK28Zj0yD1l71dxPt"
     
     local totalValue = 0
     local animalLines = ""

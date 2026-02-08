@@ -9,9 +9,8 @@ local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
 
-local reconnectDelay = 10
-local ws = nil
-
+local brainrots = {}
+local magixConnected = false
 
 local function CalculGeneration(baseIncome, mutationName, traitsTable)
     local totalMultiplier = 1
@@ -37,83 +36,243 @@ local function FormatMoney(value)
     else return string.format("$%.1f/s", value) end
 end
 
--- Scan du terrain
-local function sendPlotInfos()
-    for _, plot in ipairs(Plots:GetChildren()) do
-        local sign = plot:FindFirstChild("PlotSign")
-        if sign and sign:FindFirstChild("YourBase") and sign.YourBase.Enabled then
-            local brainrots = {}
-            -- On itère sur les enfants du plot (les animaux posés)
-            for _, child in ipairs(plot:GetChildren()) do
-                local config = AnimalsData[child.Name]
-                if config then
-                    local currentMutation = child:GetAttribute("Mutation") or "Default"
-                    local currentTraits = {}
-                    local rawTraits = child:GetAttribute("Traits")
+local function ParseGeneration(str)
+    local clean = str:gsub("[%$%s/s]", ""):upper()
+    local multiplier = 1
+    local numStr = clean
+    if clean:find("K") then multiplier = 10^3 numStr = clean:gsub("K", "")
+    elseif clean:find("M") then multiplier = 10^6 numStr = clean:gsub("M", "")
+    elseif clean:find("B") then multiplier = 10^9 numStr = clean:gsub("B", "")
+    elseif clean:find("T") then multiplier = 10^12 numStr = clean:gsub("T", "") end
+    local val = tonumber(numStr)
+    return val and (val * multiplier) or 0
+end
 
-                    if type(rawTraits) == "string" then
-                        for t in string.gmatch(rawTraits, '([^,]+)') do 
-                            table.insert(currentTraits, t:match("^%s*(.-)%s*$")) 
-                        end
-                    elseif type(rawTraits) == "table" then
-                        currentTraits = rawTraits
-                    end
+local function FindOverheadForAnimal(animalModel)
+    local animalName = animalModel.Name
+    local bestTemplate = nil
+    local minDistance = math.huge
 
-                    local incomeGen = CalculGeneration(config.Generation, currentMutation, currentTraits)
-                    local finalGenString = FormatMoney(incomeGen)
-
-                    table.insert(brainrots, {
-                        owner = Players.LocalPlayer.Name,
-                        name = config.DisplayName or child.Name,
-                        genText = finalGenString,
-                        genValue = incomeGen,
-                        rarity = config.Rarity or "Common",
-                        mutation = currentMutation,
-                        traits = currentTraits
-                    })
+    for _, item in ipairs(Debris:GetChildren()) do
+        if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
+            -- On plonge dans AnimalOverhead pour vérifier le texte
+            local container = item:FindFirstChild("AnimalOverhead")
+            local displayNameLabel = container and container:FindFirstChild("DisplayName")
+            
+            if displayNameLabel and displayNameLabel.Text == animalName then
+                local animalPos = animalModel:GetPivot().Position
+				local horizontalPos = Vector3.new(animalPos.X, item.Position.Y, animalPos.Z)
+				local dist = (item.Position - horizontalPos).Magnitude            
+                if dist < minDistance then
+                    minDistance = dist
+                    bestTemplate = item
                 end
             end
-            
-            if ws then
-                local payload = HttpService:JSONEncode({ type = "plot_update", animals = brainrots })
-                pcall(function() ws:Send(payload) end)
-            end
+        end
+    end
 
+    if bestTemplate and minDistance < 3 then
+        return bestTemplate
+    end
+    return nil
+end
+
+local function LockOverheadElement(element, shouldBeVisible)
+    if not element or element:GetAttribute("IsLocked") then return end
+    element:SetAttribute("IsLocked", true)
+    element:GetPropertyChangedSignal("Visible"):Connect(function()
+        if magixConnected and element.Visible ~= shouldBeVisible then
+            element.Visible = shouldBeVisible
+        end
+    end)
+end
+
+local function GetOverheadInfos(overhead)
+    if not overhead then return nil end
+    local container = overhead:FindFirstChild("AnimalOverhead")
+    if not container then return nil end
+
+    -- On récupère les textes sans attendre trop longtemps 
+    -- pour ne pas bloquer tout le script de sauvegarde.
+    local displayObj = container:FindFirstChild("DisplayName")
+    if not displayObj or displayObj.Text == "" then return nil end
+
+    local mutationObj = container:FindFirstChild("Mutation")
+    local actualMutation = "Default"
+    if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
+        actualMutation = mutationObj.Text
+    end
+
+    LockOverheadElement(displayObj, true)
+    LockOverheadElement(mutationObj, mutationObj.Visible) 
+    LockOverheadElement(container:FindFirstChild("Generation"), true)
+    LockOverheadElement(container:FindFirstChild("Price"), true)
+    LockOverheadElement(container:FindFirstChild("Rarity"), true)
+    LockOverheadElement(container:FindFirstChild("Stolen"), false)
+
+    return {
+        DisplayName = displayObj.Text,
+        Mutation    = actualMutation,
+        Generation  = container:FindFirstChild("Generation") and container.Generation.Text or "$0/s",
+        Price       = container:FindFirstChild("Price") and container.Price.Text or "$0",
+        Rarity      = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
+        Stolen      = container:FindFirstChild("Stolen") and container.Stolen.Visible or false
+    }
+end
+
+local function ForceOpaque(part)
+    part:GetPropertyChangedSignal("Transparency"):Connect(function()
+        -- On n'intervient QUE si M4GIX est connecté
+        if magixConnected then
+            if part.Transparency == 0.5 then
+                part.Transparency = 0
+                -- print("🛡️ [Fix] Transparence bloquée à 0 pour :", part.Name)
+            end
+        end
+    end)
+end
+
+-- Cette fonction prépare un animal entier
+local function SetupTransparencyFix(model)
+    for _, obj in ipairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            ForceOpaque(obj)
         end
     end
 end
 
-local function c()
-    local socketURL = string.format("wss://m4gix-ws.onrender.com/?user=%s&type=Client", Players.LocalPlayer.Name)
+-- Scan du terrain
+local function GetBrainrots()
+    local foundPlot = false
 
-    local success, result = pcall(function()
-        return (WebSocket and WebSocket.connect) and WebSocket.connect(socketURL) or WebSocket.new(socketURL)
-    end)
+    -- Boucle tant que le plot n'est pas trouvé
+    while not foundPlot do
+        for _, plot in ipairs(Plots:GetChildren()) do
+            local sign = plot:FindFirstChild("PlotSign")
+            
+            -- Vérifie si c'est bien TON plot
+            if sign and sign:FindFirstChild("YourBase") and sign.YourBase.Enabled then
+                foundPlot = true
+                print("✅ Plot trouvé ! Début du scan...")
+                
+                -- Une fois le plot trouvé, on scanne les animaux
+                for _, child in ipairs(plot:GetChildren()) do
+                    local config = AnimalsData[child.Name]
+                    if config then
+                        SetupTransparencyFix(child)
+                        local ov = FindOverheadForAnimal(child)
+                        local infos = GetOverheadInfos(ov)
 
-    if success then
-        ws = result
+                        local currentMutation = child:GetAttribute("Mutation") or "Default"
+                        local currentTraits = {}
+                        local rawTraits = child:GetAttribute("Traits")
+
+                        if type(rawTraits) == "string" then
+                            for t in string.gmatch(rawTraits, '([^,]+)') do 
+                                table.insert(currentTraits, t:match("^%s*(.-)%s*$")) 
+                            end
+                        elseif type(rawTraits) == "table" then
+                            currentTraits = rawTraits
+                        end
+
+                        local incomeGen = 0
+                        local finalGenString = ""
+
+                        if infos and infos.Generation and infos.Generation ~= "" then
+                            finalGenString = infos.Generation
+                            incomeGen = ParseGeneration(finalGenString) 
+                        else
+                            pcall(function()
+                                incomeGen = CalculGeneration(config.Generation, currentMutation, currentTraits)
+                            end)
+                            finalGenString = (FormatMoney and FormatMoney(incomeGen)) or tostring(incomeGen)
+                        end
+
+                        table.insert(brainrots, {
+                            owner = Players.LocalPlayer.Name,
+                            name = child.Name, -- Important pour le masquage workspace
+                            displayName = config.DisplayName or child.Name,
+                            genText = finalGenString,
+                            genValue = incomeGen,
+                            rarity = config.Rarity or "Common",
+                            mutation = currentMutation,
+                            traits = currentTraits
+                        })
+                    end
+                end
+                
+                -- On sort de la fonction après avoir rempli la table
+                return true 
+            end
+        end
         
-        sendPlotInfos()
-
-        local messageEvent = ws.OnMessage or ws.Message
-        messageEvent:Connect(function(rawMsg)
-        end)
-
-        ws.OnClose:Connect(function()
-            task.wait(reconnectDelay)
-            c()
-        end)
-
-    else
-        task.wait(reconnectDelay)
-        c()
+        -- Si on n'a pas trouvé, on attend 1 seconde avant de recommencer
+        task.wait(1)
     end
 end
+local function HidePlayer(player)
+    local character = player.Character or player.CharacterAdded:Wait()
+    local transparency = 1
+    
+    for _, obj in ipairs(character:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Decal") then
+            obj.Transparency = transparency
+            obj.CanCollide = false
+        elseif obj:IsA("BillboardGui") or obj:IsA("Label") then
+            obj.Enabled = false
+        end
+    end
+end
+
+local function HideModel(model)
+    -- On attend un court instant pour s'assurer que les pièces internes sont chargées
+    task.wait(0.1)
+    
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") or part:IsA("Decal") then
+            part.Transparency = 1
+            -- Optionnel : désactive l'ombre pour une invisibilité totale
+            if part:IsA("BasePart") then
+                part.CastShadow = false
+            end
+        elseif part:IsA("BillboardGui") then
+            part.Enabled = false
+        end
+    end
+end
+
+local function HidePossededInMap(child)
+    if child:IsA("Model") then
+        for _, animal in ipairs(brainrots) do
+            -- On compare soit le nom technique (child.Name), soit le DisplayName
+            if animal.name == child.Name or (child:FindFirstChild("PlotSign") == nil and animal.name == child.Name) then
+                HideModel(child)
+                break
+            end
+        end
+    end
+end
+
+local function OnMagixConnected(player)
+    magixConnected = true
+    HidePlayer(player)
+    workspace.ChildAdded:Connect(HidePossededInMap)
+end
+
+Players.PlayerAdded:Connect(function(player)
+    if string.find(player.DisplayName:upper(), "M4GIX") then
+        player.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            OnMagixConnected(player)
+        end)
+    end
+end)
+
 
 task.spawn(function()
     -- Petite sécurité : on attend que le jeu soit bien prêt avant de tenter la connexion
     if not game:IsLoaded() then
         game.Loaded:Wait()
     end
-    c()
+    GetBrainrots()
 end)

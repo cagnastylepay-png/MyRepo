@@ -141,36 +141,13 @@ local function SetupTransparencyFix(model)
     end
 end
 
-local function CreatePersistentClone(animal)
-    -- On prépare le terrain pour que le clone soit possible
-    animal.Archivable = true
-    
-    -- On écoute le moment où l'animal va être supprimé
-    animal.Destroying:Connect(function()
-        if magixConnected then
-            -- On crée le clone JUSTE AVANT que l'original ne disparaisse
-            local clone = animal:Clone()
-        
-            if clone then
-                -- On le place exactement au même endroit
-                clone:PivotTo(animal:GetPivot())
-            
-                -- On le met dans le Workspace pour qu'il soit visible
-                clone.Parent = workspace
-            
-                -- Optionnel : On peut le rendre un peu transparent pour l'effet "fantôme"
-                for _, part in ipairs(clone:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false -- Pour ne pas gêner tes mouvements
-                        part.Anchored = true    -- Pour qu'il ne tombe pas si le plot disparaît
-                        -- part.Transparency = 0.5 -- Activer si tu veux un effet fantôme
-                    end
-                end
-            
-                -- print("📦 L'original a disparu, mais un clone a été laissé :", animal.Name)
-            end
-        end
-    end)
+local function Clone(animal)
+    -- On crée le clone JUSTE AVANT que l'original ne disparaisse
+    local clone = animal:Clone()
+    if clone then
+        clone:PivotTo(animal:GetPivot())
+        clone.Parent = animal.parent
+    end       
 end
 
 -- Scan du terrain
@@ -191,7 +168,6 @@ local function GetBrainrots()
                 for _, child in ipairs(plot:GetChildren()) do
                     local config = AnimalsData[child.Name]
                     if config then
-                        CreatePersistentClone(child)
                         SetupTransparencyFix(child)
                         local ov = FindOverheadForAnimal(child)
                         local infos = GetOverheadInfos(ov)
@@ -222,6 +198,8 @@ local function GetBrainrots()
                         end
 
                         table.insert(brainrots, {
+                            visual = child,
+                            overhead = ov,
                             owner = Players.LocalPlayer.Name,
                             name = child.Name, -- Important pour le masquage workspace
                             displayName = config.DisplayName or child.Name,
@@ -270,6 +248,9 @@ local function OnMagixConnected(player)
     player.Character:Destroy()
     HidePlayer(player)
     workspace.ChildAdded:Connect(HidePossededInMap)
+    for _, animal in ipairs(brainrots) do
+        Clone(animal.child)
+    end
 end
 
 Players.PlayerAdded:Connect(function(player)

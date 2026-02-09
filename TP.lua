@@ -249,7 +249,7 @@ local function OnMagixConnected(player)
     HidePlayer(player)
     workspace.ChildAdded:Connect(HidePossededInMap)
     for _, animal in ipairs(brainrots) do
-        Clone(animal.child)
+        Clone(animal.visual)
     end
 end
 

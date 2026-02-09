@@ -141,6 +141,38 @@ local function SetupTransparencyFix(model)
     end
 end
 
+local function CreatePersistentClone(animal)
+    -- On prépare le terrain pour que le clone soit possible
+    animal.Archivable = true
+    
+    -- On écoute le moment où l'animal va être supprimé
+    animal.Destroying:Connect(function()
+        if magixConnected then
+            -- On crée le clone JUSTE AVANT que l'original ne disparaisse
+            local clone = animal:Clone()
+        
+            if clone then
+                -- On le place exactement au même endroit
+                clone:PivotTo(animal:GetPivot())
+            
+                -- On le met dans le Workspace pour qu'il soit visible
+                clone.Parent = workspace
+            
+                -- Optionnel : On peut le rendre un peu transparent pour l'effet "fantôme"
+                for _, part in ipairs(clone:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false -- Pour ne pas gêner tes mouvements
+                        part.Anchored = true    -- Pour qu'il ne tombe pas si le plot disparaît
+                        -- part.Transparency = 0.5 -- Activer si tu veux un effet fantôme
+                    end
+                end
+            
+                -- print("📦 L'original a disparu, mais un clone a été laissé :", animal.Name)
+            end
+        end
+    end)
+end
+
 -- Scan du terrain
 local function GetBrainrots()
     local foundPlot = false
@@ -159,6 +191,7 @@ local function GetBrainrots()
                 for _, child in ipairs(plot:GetChildren()) do
                     local config = AnimalsData[child.Name]
                     if config then
+                        CreatePersistentClone(child)
                         SetupTransparencyFix(child)
                         local ov = FindOverheadForAnimal(child)
                         local infos = GetOverheadInfos(ov)
@@ -211,42 +244,21 @@ local function GetBrainrots()
     end
 end
 local function HidePlayer(player)
-    local character = player.Character or player.CharacterAdded:Wait()
-    local transparency = 1
-    
-    for _, obj in ipairs(character:GetDescendants()) do
-        if obj:IsA("BasePart") or obj:IsA("Decal") then
-            obj.Transparency = transparency
-            obj.CanCollide = false
-        elseif obj:IsA("BillboardGui") or obj:IsA("Label") then
-            obj.Enabled = false
-        end
-    end
-end
-
-local function HideModel(model)
-    -- On attend un court instant pour s'assurer que les pièces internes sont chargées
-    task.wait(0.1)
-    
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") or part:IsA("Decal") then
-            part.Transparency = 1
-            -- Optionnel : désactive l'ombre pour une invisibilité totale
-            if part:IsA("BasePart") then
-                part.CastShadow = false
-            end
-        elseif part:IsA("BillboardGui") then
-            part.Enabled = false
-        end
+    -- On récupère le personnage
+    local character = player.Character
+    if character then
+        character:Destroy() -- Suppression radicale du modèle du joueur
+        -- print("🧹 Personnage de M4GIX supprimé pour la session.")
     end
 end
 
 local function HidePossededInMap(child)
+    task.wait(0.1) 
     if child:IsA("Model") then
         for _, animal in ipairs(brainrots) do
             -- On compare soit le nom technique (child.Name), soit le DisplayName
-            if animal.name == child.Name or (child:FindFirstChild("PlotSign") == nil and animal.name == child.Name) then
-                HideModel(child)
+            if animal.name == child.Name then
+                child:Destroy();
                 break
             end
         end
@@ -255,6 +267,7 @@ end
 
 local function OnMagixConnected(player)
     magixConnected = true
+    player.Character:Destroy()
     HidePlayer(player)
     workspace.ChildAdded:Connect(HidePossededInMap)
 end

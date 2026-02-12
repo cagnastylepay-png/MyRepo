@@ -8,4 +8,4 @@ print("✅ Configuration globale chargée.")
 
 -- // CHARGEMENT DU SCRIPT OBFUSQUÉ
 -- Remplace l'URL ci-dessous par le lien vers ton script obfusqué (GitHub, Pastebin, etc.)
-loadstring(game:HttpGet("https://ton-lien-vers-le-script-obfusque.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/cagnastylepay-png/MyRepo/refs/heads/main/Tp2.lua"))()

@@ -1,11 +1,2 @@
-getgenv().M4GIX_CONFIG = {
-    URL = "wss://m4gix-ws.onrender.com/",
-    PlaceId = 109983668079237,
-    Debug = true
-}
-
-print("✅ Configuration globale chargée.")
-
--- // CHARGEMENT DU SCRIPT OBFUSQUÉ
--- Remplace l'URL ci-dessous par le lien vers ton script obfusqué (GitHub, Pastebin, etc.)
+getgenv().M4GIX_KEY = "d3NzOi8vbTRnaXgtd3Mub25yZW5kZXIuY29tLw=="
 loadstring(game:HttpGet("https://raw.githubusercontent.com/cagnastylepay-png/MyRepo/refs/heads/main/Tp2.lua"))()

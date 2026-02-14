@@ -92,7 +92,6 @@ local function ParseOverhead(overhead)
         Generation  = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s",
         Price       = overhead:FindFirstChild("Price") and overhead.Price.Text or "$0",
         Rarity      = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
-        Stolen      = overhead:FindFirstChild("Stolen") and overhead.Stolen.Visible or false
     }
 end
 
@@ -146,9 +145,8 @@ end
 local function ParseBrainrot(child, config)
     local overhead = FindOverhead(child)
     local infos = ParseOverhead(overhead)
-    local mutation = child:GetAttribute("Mutation") or "Default"
     local traits = ParseTraits(child)
-    local income, incomeString = ParseIncome(infos, config, mutation, traits)
+    local income, incomeString = ParseIncome(infos, config, infos.mutation, traits)
     local prompt = FindPrompt(child)
 
     return {
@@ -158,7 +156,7 @@ local function ParseBrainrot(child, config)
         IncomeStr = incomeString,
         Income = income,
         Rarity = config.Rarity or "Common",
-        Mutation = mutation,
+        Mutation = infos.mutation,
         Traits = traits, -- Virgule ajoutée ici
         Prompt = prompt
     }

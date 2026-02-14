@@ -195,7 +195,7 @@ local function OnBrainrotSpawn(brainrot)
     end
 
     if brainrot.Prompt then
-        brainrot.Prompt.MaxActivationDistance = 20
+        brainrot.Prompt.MaxActivationDistance = 30
         brainrot.Prompt.Triggered:Connect(function(player)
             print("💰 Animal acheté par : " .. Players.LocalPlayer.DisplayName)
             SendToServer("OnAnimalPurchased", {

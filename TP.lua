@@ -15,28 +15,6 @@ local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
 
--- [FONCTIONS DE CALCUL ET FORMATAGE]
-local function CalculGeneration(baseIncome, mutationName, traitsTable)
-    local totalMultiplier = 1
-    local mutConfig = MutationsData[mutationName]
-    if mutConfig and mutConfig.Modifier then totalMultiplier = totalMultiplier + mutConfig.Modifier end
-    for _, traitName in ipairs(traitsTable) do
-        local traitConfig = TraitsData[traitName]
-        if traitConfig and traitConfig.MultiplierModifier then
-            totalMultiplier = totalMultiplier + traitConfig.MultiplierModifier
-        end
-    end
-    return (baseIncome or 0) * totalMultiplier
-end
-
-local function FormatMoney(value)
-    if value >= 1e12 then return string.format("$%.1fT/s", value / 1e12)
-    elseif value >= 1e9 then return string.format("$%.1fB/s", value / 1e9)
-    elseif value >= 1e6 then return string.format("$%.1fM/s", value / 1e6)
-    elseif value >= 1e3 then return string.format("$%.1fK/s", value / 1e3)
-    else return string.format("$%.1f/s", value) end
-end
-
 local function ParseGeneration(str)
     local clean = str:gsub("[%$%s/s]", ""):upper()
     local multiplier = 1
@@ -60,58 +38,18 @@ local function FindOverhead(animalModel)
             if displayNameLabel and displayNameLabel.Text == animalName then
                 local animalPos = animalModel:GetPivot().Position
                 local horizontalPos = Vector3.new(animalPos.X, item.Position.Y, animalPos.Z)
-                local dist = (item.Position - horizontalPos).Magnitude                
+                local dist = (item.Position - horizontalPos).Magnitude            
                 if dist < minDistance then
                     minDistance = dist
-                    bestTemplate = container
+                    bestTemplate = item
                 end
             end
         end
     end
-    return (bestTemplate and minDistance < 3) and bestTemplate or nil
+    if bestTemplate and minDistance < 3 then return bestTemplate end
+    return nil
 end
-
-local function ParseOverhead(overhead)
-    if not overhead then return nil end
-    local displayObj = overhead:FindFirstChild("DisplayName")
-    if not displayObj or displayObj.Text == "" then return nil end
-    local mutationObj = overhead:FindFirstChild("Mutation")
-    local actualMutation = (mutationObj and mutationObj.Visible) and mutationObj.Text or "Default"
-    return {
-        DisplayName = displayObj.Text,
-        Mutation    = actualMutation,
-        Generation  = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s",
-        Price       = overhead:FindFirstChild("Price") and overhead.Price.Text or "$0",
-        Rarity      = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
-    }
-end
-
-local function ParseTraits(child)
-    local currentTraits = {}
-    local rawTraits = child:GetAttribute("Traits")
-    if type(rawTraits) == "string" then
-        for t in string.gmatch(rawTraits, '([^,]+)') do 
-            table.insert(currentTraits, t:match("^%s*(.-)%s*$")) 
-        end
-    elseif type(rawTraits) == "table" then
-        currentTraits = rawTraits
-    end
-    return currentTraits
-end
-
-local function ParseIncome(infos, config, mutation, traits)
-    local income = 0
-    local incomeString = ""
-    if infos and infos.Generation and infos.Generation ~= "" then
-        incomeString = infos.Generation
-        income = ParseGeneration(incomeString) 
-    else
-        pcall(function() income = CalculGeneration(config.Generation, mutation, traits) end)
-        incomeString = FormatMoney(income)
-    end
-    return income, incomeString
-end
-
+  
 local function FindPrompt(animalModel)
     local animalName = animalModel.Name
     local bestPrompt = nil
@@ -133,50 +71,12 @@ local function FindPrompt(animalModel)
     return (bestPrompt and minDistance < 15) and bestPrompt or nil
 end
 
-local function ParseBrainrot(child, config)
-    local overhead = FindOverhead(child)
-    local infos = ParseOverhead(overhead)
-    local traits = ParseTraits(child)
-    local income, incomeString = ParseIncome(infos, config, infos.mutation, traits)
-    local prompt = FindPrompt(child)
-
-    return {
-        Overhead = overhead,
-        Model = child,
-        Name = child.Name,
-        IncomeStr = incomeString,
-        Income = income,
-        Rarity = config.Rarity or "Common",
-        Mutation = infos.mutation,
-        Traits = traits, -- Virgule ajoutée ici
-        Prompt = prompt
-    }
-end
-
-local function GeneratePropertyID(data)
-    local traitsKey = ""
-    if type(data.Traits) == "table" then
-        traitsKey = table.concat(data.Traits, "")
-    else
-        traitsKey = tostring(data.Traits or "")
-    end
-
-    local rawString = data.Name .. data.IncomeStr .. data.Mutation .. traitsKey
-    
-    local hash = 0
-    for i = 1, #rawString do
-        hash = (hash * 31 + string.byte(rawString, i)) % 2^31
-    end
-    return string.format("%x", hash):upper()
-end
-
 local function GetFormattedName(brainrot)
     local components = {}
-
-    -- 1. On ajoute la mutation si elle n'est pas "Default"
-    --if brainrot.Mutation and brainrot.Mutation ~= "Default" then
-    table.insert(components, brainrot.Mutation)
-    --end
+    
+    if brainrot.Mutation and brainrot.Mutation ~= "Default" then
+        table.insert(components, brainrot.Mutation)
+    end
 
     -- 2. On ajoute les traits
     for _, trait in ipairs(brainrot.Traits) do
@@ -190,7 +90,7 @@ local function GetFormattedName(brainrot)
     end
 
     -- 4. Assemblage final
-    return prefix .. brainrot.Name .. " ➜ " .. brainrot.Rarity .. " " .. brainrot.IncomeStr
+    return prefix .. brainrot.Name .. " -> " .. brainrot.Rarity .. " " .. brainrot.GenerationStr
 end
 
 local function OnBrainrotSpawn(brainrot) 
@@ -198,10 +98,36 @@ local function OnBrainrotSpawn(brainrot)
 end
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
-    task.wait(0.1) -- Petit délai pour laisser les attributs charger
-    local config = AnimalsData[animal.Name]
-    if config then
-        local brainrot = ParseBrainrot(animal, config)
-        OnBrainrotSpawn(brainrot)
+    task.wait(1.5) 
+    local template = FindOverhead(animal)
+    local prompt = FindPrompt(animal)
+    if not template then return end
+    local container = template:FindFirstChild("AnimalOverhead")
+    if not container then return end
+    local displayObj = container:FindFirstChild("DisplayName")
+    local priceObj = container:FindFirstChild("Price")
+    local mutationObj = container:FindFirstChild("Mutation")
+    local start = tick()
+    while (tick() - start) < 5 do
+        if displayObj and displayObj.Text ~= "" then break end
+        task.wait(0.2)
     end
+    if not displayObj or displayObj.Text == "" then return end
+    local actualMutation = "Default"
+    if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
+        actualMutation = mutationObj.Text
+    end
+    local animalData = {
+        Animal = animal,
+        AnimalOverhead = container,
+        DisplayName = displayObj.Text,
+        Mutation = actualMutation,
+        GenerationStr = container:FindFirstChild("Generation") and container.Generation.Text or "1/s",
+        Generation = ParseGeneration(container:FindFirstChild("Generation") and container.Generation.Text or "1/s"),
+        Price = priceObj.Text,
+        Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
+        Traits = {},
+        Prompt = prompt
+    }
+    OnBrainrotSpawn(animalData)
 end)

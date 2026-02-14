@@ -195,7 +195,6 @@ local function OnBrainrotSpawn(brainrot)
     end
 
     if brainrot.Prompt then
-        brainrot.Prompt.MaxActivationDistance = 30
         brainrot.Prompt.Triggered:Connect(function(player)
             print("💰 Animal acheté par : " .. Players.LocalPlayer.DisplayName)
             SendToServer("OnAnimalPurchased", {
@@ -206,9 +205,8 @@ local function OnBrainrotSpawn(brainrot)
 
         brainrot.Prompt.PromptShown:Connect(function(inputType)
             -- Note: Assurez-vous que fireproximityprompt est défini dans votre exécuteur
-            if fireproximityprompt then
-                fireproximityprompt(brainrot.Prompt)
-            end
+            -- fireproximityprompt(brainrot.Prompt)
+            
         end)
     end
 

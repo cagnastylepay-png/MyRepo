@@ -4,6 +4,8 @@ local Plots = workspace:WaitForChild("Plots")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = workspace:WaitForChild("Debris")
 local TeleportService = game:GetService("TeleportService")
+local PathfindingService = game:GetService("PathfindingService")
+local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 
 -- Chargement des modules de données
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))

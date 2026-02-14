@@ -8,21 +8,12 @@ local PathfindingService = game:GetService("PathfindingService")
 local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 
 -- [VARIABLES INITIALES MANQUANTES]
-local Brainrots = {} -- Table pour stocker les IDs
-local server = nil    -- Variable pour la connexion WebSocket
-local reconnectDelay = 5 -- Délai de reconnexion en secondes
+local BrainrotsToBuy = {} -- Table pour stocker les IDs
 
 -- Chargement des modules de données
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
-
-local function SendToServer(method, data)
-    if server then
-        local success, payload = pcall(function() return HttpService:JSONEncode({Method = method, Data = data}) end)
-        if success then server:Send(payload) end
-    end
-end
 
 -- [FONCTIONS DE CALCUL ET FORMATAGE]
 local function CalculGeneration(baseIncome, mutationName, traitsTable)
@@ -179,87 +170,38 @@ local function GeneratePropertyID(data)
     return string.format("%x", hash):upper()
 end
 
+local function GetFormattedName(brainrot)
+    local components = {}
+
+    -- 1. On ajoute la mutation si elle n'est pas "Default"
+    if brainrot.Mutation and brainrot.Mutation ~= "Default" then
+        table.insert(components, brainrot.Mutation)
+    end
+
+    -- 2. On ajoute les traits
+    for _, trait in ipairs(brainrot.Traits) do
+        table.insert(components, trait)
+    end
+
+    -- 3. Construction de la partie entre crochets
+    local prefix = ""
+    if #components > 0 then
+        prefix = "[" .. table.concat(components, ", ") .. "] "
+    end
+
+    -- 4. Assemblage final
+    return prefix .. brainrot.Name .. " ➜ " .. brainrot.Rarity .. " " .. brainrot.IncomeStr
+end
+
 local function OnBrainrotSpawn(brainrot) 
-    local Id = GeneratePropertyID(brainrot)
-    Brainrots[Id] = brainrot
-    
-    if brainrot.Model then
-        brainrot.Model.AncestryChanged:Connect(function(_, parent)
-            if not parent then
-                Brainrots[Id] = nil
-                SendToServer("OnBrainrotDespawn", { Id = Id })
-            end
-        end)
+    print(GetFormattedName(brainrot))
+end
+
+RenderedAnimals.ChildAdded:Connect(function(animal)
+    task.wait(0.1) -- Petit délai pour laisser les attributs charger
+    local config = AnimalsData[animal.Name]
+    if config then
+        local brainrot = ParseBrainrot(animal, config)
+        OnBrainrotSpawn(brainrot)
     end
-
-    if brainrot.Prompt then
-        brainrot.Prompt.Triggered:Connect(function(player)
-            print("💰 Animal acheté par : " .. Players.LocalPlayer.DisplayName)
-            SendToServer("OnAnimalPurchased", {
-                Id = Id,
-                Buyer = Players.LocalPlayer.DisplayName
-            })
-        end)
-
-        brainrot.Prompt.PromptShown:Connect(function(inputType)
-            -- Note: Assurez-vous que fireproximityprompt est défini dans votre exécuteur
-            -- fireproximityprompt(brainrot.Prompt)
-            
-        end)
-    end
-
-    SendToServer("OnBrainrotSpawn", {
-        Id = Id, -- Virgule ajoutée ici
-        Name = brainrot.Name,
-        IncomeStr = brainrot.IncomeStr,
-        Income = brainrot.Income,
-        Rarity = brainrot.Rarity,
-        Mutation = brainrot.Mutation,
-        Traits = brainrot.Traits,
-        JobId = game.JobId
-    })
-end
-
-local function OnServerMessage(rawMsg)
-    local success, data = pcall(function() return HttpService:JSONDecode(rawMsg) end)
-end
-
-local function OnServerConnect()
-    RenderedAnimals.ChildAdded:Connect(function(animal)
-        task.wait(0.1) -- Petit délai pour laisser les attributs charger
-        local config = AnimalsData[animal.Name]
-        if config then
-            local brainrot = ParseBrainrot(animal, config)
-            OnBrainrotSpawn(brainrot)
-        end
-    end)
-end
-
-function connectWS(url)
-    local success, result = pcall(function()
-        -- Support pour les différents exécuteurs (WebSocket.connect ou WebSocket.new)
-        return (WebSocket and WebSocket.connect) and WebSocket.connect(url) or WebSocket.new(url)
-    end)
-    if success then
-        server = result
-        OnServerConnect()
-        local messageEvent = server.OnMessage or server.Message
-        messageEvent:Connect(OnServerMessage)
-        
-        -- Gestion de la fermeture
-        local closeEvent = server.OnClose or server.Close
-        if closeEvent then
-            closeEvent:Connect(function()
-                task.wait(reconnectDelay)
-                connectWS(url)
-            end)
-        end
-    else
-        task.wait(reconnectDelay)
-        connectWS(url)
-    end
-end
-
--- [LANCEUR]
-local serverURL = "wss://m4gix-ws.onrender.com/?user=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
-task.spawn(function() connectWS(serverURL) end)
+end)

@@ -7,14 +7,15 @@ local TeleportService = game:GetService("TeleportService")
 local PathfindingService = game:GetService("PathfindingService")
 local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 
+-- [VARIABLES INITIALES MANQUANTES]
+local Brainrots = {} -- Table pour stocker les IDs
+local server = nil    -- Variable pour la connexion WebSocket
+local reconnectDelay = 5 -- Délai de reconnexion en secondes
+
 -- Chargement des modules de données
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
-
-local Brainrots = {} -- Table pour stocker les IDs
-local server = nil    -- Variable pour la connexion WebSocket
-local reconnectDelay = 5 -- Délai de reconnexion en secondes
 
 local function SendToServer(method, data)
     if server then
@@ -56,7 +57,6 @@ local function ParseGeneration(str)
     local val = tonumber(numStr)
     return val and (val * multiplier) or 0
 end
-
 
 local function FindOverhead(animalModel)
     local animalName = animalModel.Name
@@ -159,13 +159,12 @@ local function ParseBrainrot(child, config)
         Income = income,
         Rarity = config.Rarity or "Common",
         Mutation = mutation,
-        Traits = traits
+        Traits = traits, -- Virgule ajoutée ici
         Prompt = prompt
     }
 end
 
 local function GeneratePropertyID(data)
-    -- On s'assure que les traits sont concaténés proprement (table vers string)
     local traitsKey = ""
     if type(data.Traits) == "table" then
         traitsKey = table.concat(data.Traits, "")
@@ -173,10 +172,8 @@ local function GeneratePropertyID(data)
         traitsKey = tostring(data.Traits or "")
     end
 
-    -- Concaténation des propriétés uniques
     local rawString = data.Name .. data.IncomeStr .. data.Mutation .. traitsKey
     
-    -- Algorithme de hash (Bernstein modifiée)
     local hash = 0
     for i = 1, #rawString do
         hash = (hash * 31 + string.byte(rawString, i)) % 2^31
@@ -188,11 +185,10 @@ local function OnBrainrotSpawn(brainrot)
     local Id = GeneratePropertyID(brainrot)
     Brainrots[Id] = brainrot
     
-    if brainrot.Model then -- Assure-toi que l'objet s'appelle 'Model' ou 'Child'
+    if brainrot.Model then
         brainrot.Model.AncestryChanged:Connect(function(_, parent)
             if not parent then
                 Brainrots[Id] = nil
-                -- Optionnel : Prévenir le serveur que l'animal a disparu
                 SendToServer("OnBrainrotDespawn", { Id = Id })
             end
         end)
@@ -200,7 +196,6 @@ local function OnBrainrotSpawn(brainrot)
 
     if brainrot.Prompt then
         brainrot.Prompt.MaxActivationDistance = 20
-        -- Triggered : Se déclenche quand quelqu'un achète l'animal
         brainrot.Prompt.Triggered:Connect(function(player)
             print("💰 Animal acheté par : " .. Players.LocalPlayer.DisplayName)
             SendToServer("OnAnimalPurchased", {
@@ -209,13 +204,14 @@ local function OnBrainrotSpawn(brainrot)
             })
         end)
 
-        -- PromptShown : Se déclenche quand le prompt apparaît à l'écran (bot à proximité)
         brainrot.Prompt.PromptShown:Connect(function(inputType)
-            -- On peut envoyer l'info pour savoir quel bot est actuellement à côté
-            fireproximityprompt(brainrot.Prompt)
+            -- Note: Assurez-vous que fireproximityprompt est défini dans votre exécuteur
+            if fireproximityprompt then
+                fireproximityprompt(brainrot.Prompt)
+            end
         end)
     end
-    -- Envoi au serveur (Correction de la virgule manquante)
+
     SendToServer("OnBrainrotSpawn", {
         Id = Id, -- Virgule ajoutée ici
         Name = brainrot.Name,
@@ -224,10 +220,9 @@ local function OnBrainrotSpawn(brainrot)
         Rarity = brainrot.Rarity,
         Mutation = brainrot.Mutation,
         Traits = brainrot.Traits,
-        JobId = game.JobId -- Toujours utile pour le dashboard
+        JobId = game.JobId
     })
 end
-
 
 local function OnServerMessage(rawMsg)
     local success, data = pcall(function() return HttpService:JSONDecode(rawMsg) end)
@@ -235,6 +230,7 @@ end
 
 local function OnServerConnect()
     RenderedAnimals.ChildAdded:Connect(function(animal)
+        task.wait(0.1) -- Petit délai pour laisser les attributs charger
         local config = AnimalsData[animal.Name]
         if config then
             local brainrot = ParseBrainrot(animal, config)
@@ -245,6 +241,7 @@ end
 
 function connectWS(url)
     local success, result = pcall(function()
+        -- Support pour les différents exécuteurs (WebSocket.connect ou WebSocket.new)
         return (WebSocket and WebSocket.connect) and WebSocket.connect(url) or WebSocket.new(url)
     end)
     if success then
@@ -252,10 +249,15 @@ function connectWS(url)
         OnServerConnect()
         local messageEvent = server.OnMessage or server.Message
         messageEvent:Connect(OnServerMessage)
-        server.OnClose:Connect(function()
-            task.wait(reconnectDelay)
-            connectWS(url)
-        end)
+        
+        -- Gestion de la fermeture
+        local closeEvent = server.OnClose or server.Close
+        if closeEvent then
+            closeEvent:Connect(function()
+                task.wait(reconnectDelay)
+                connectWS(url)
+            end)
+        end
     else
         task.wait(reconnectDelay)
         connectWS(url)

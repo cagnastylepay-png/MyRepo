@@ -8,7 +8,70 @@ local PathfindingService = game:GetService("PathfindingService")
 local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 local RunService = game:GetService("RunService")
 
--- Variables Globales
+local ScreenGui = Instance.new("ScreenGui")
+local Frame = Instance.new("Frame")
+local StartBtn = Instance.new("TextButton")
+local BotSelector = Instance.new("TextButton")
+
+-- Setup du GUI
+ScreenGui.Parent = game.CoreGui
+Frame.Size = UDim2.new(0, 160, 0, 110)
+Frame.Position = UDim2.new(0, 10, 0, 10)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.Active = true
+Frame.Draggable = true 
+Frame.Parent = ScreenGui
+
+Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+
+-- Sélecteur de Mode
+local currentBot = 1
+BotSelector.Size = UDim2.new(1, -20, 0, 35)
+BotSelector.Position = UDim2.new(0, 10, 0, 15)
+BotSelector.Text = "BOT 1 (Z > 130 | Axe -355)"
+BotSelector.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+BotSelector.TextColor3 = Color3.new(1, 1, 1)
+BotSelector.Font = Enum.Font.SourceSansBold
+BotSelector.TextSize = 12
+BotSelector.Parent = Frame
+Instance.new("UICorner", BotSelector)
+
+BotSelector.MouseButton1Click:Connect(function()
+    if currentBot == 1 then
+        currentBot = 2
+        BotSelector.Text = "BOT 2 (Z < 130 | Axe -60)"
+    else
+        currentBot = 1
+        BotSelector.Text = "BOT 1 (Z > 130 | Axe -355)"
+    end
+end)
+
+-- Bouton Start/Stop
+local botStarted = false
+StartBtn.Size = UDim2.new(1, -20, 0, 35)
+StartBtn.Position = UDim2.new(0, 10, 0, 60)
+StartBtn.Text = "START"
+StartBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+StartBtn.TextColor3 = Color3.new(1, 1, 1)
+StartBtn.Font = Enum.Font.SourceSansBold
+StartBtn.TextSize = 16
+StartBtn.Parent = Frame
+Instance.new("UICorner", StartBtn)
+
+StartBtn.MouseButton1Click:Connect(function()
+    botStarted = not botStarted
+    if botStarted then
+        StartBtn.Text = "STOP"
+        StartBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+        print("🚀 Bot démarré en Mode " .. currentBot)
+    else
+        StartBtn.Text = "START"
+        StartBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+        print("🛑 Bot arrêté.")
+    end
+end)
+
+-- [VARIABLES INITIALES MANQUANTES]
 local BrainrotsToBuy = {}
 local isProcessing = false
 
@@ -48,7 +111,8 @@ local function FindOverhead(animalModel)
             end
         end
     end
-    return (bestTemplate and minDistance < 3) and bestTemplate or nil
+    if bestTemplate and minDistance < 3 then return bestTemplate end
+    return nil
 end
   
 local function FindPrompt(animalModel)
@@ -74,152 +138,187 @@ end
 
 local function GetFormattedName(brainrot)
     local components = {}
+    
     if brainrot.Mutation and brainrot.Mutation ~= "Default" then
         table.insert(components, brainrot.Mutation)
     end
+
+    -- 2. On ajoute les traits
+    --for _, trait in ipairs(brainrot.Traits) do
+    --    table.insert(components, trait)
+    --end
+
+    -- 3. Construction de la partie entre crochets
     local prefix = ""
     if #components > 0 then
         prefix = "[" .. table.concat(components, ", ") .. "] "
     end
+
+    -- 4. Assemblage final
     return prefix .. brainrot.DisplayName .. " -> " .. brainrot.Rarity .. " " .. brainrot.GenerationStr
 end
 
 local function ShouldIBuy(brainrot)
-    return brainrot.Mutation ~= "Default"
+    local luckies = {"Heart Lucky Block", "Secret Lucky Block", "Admin Lucky Block", "Taco Lucky Block", "Los Lucky Blocks", "Los Taco Blocks"}
+
+    -- 1. Si c'est un Secret, on achète direct
+    if brainrot.Rarity == "Secret" then 
+        return true 
+    end
+
+    -- 2. Si le nom est dans la liste des Lucky Blocks
+    for _, name in ipairs(luckies) do
+        if brainrot.DisplayName == name then
+            return true
+        end
+    end
+
+    -- 3. Si la génération est supérieure à 5 Millions (5,000,000)
+    -- Rappel : brainrot.Generation est déjà un nombre grâce à ParseGeneration
+    if brainrot.Generation and brainrot.Generation >= 5000000 then
+        return true
+    end
+
+    return false
 end
 
 local function OnBrainrotSpawn(brainrot) 
-    local name = GetFormattedName(brainrot)
-    print("📢 Nouveau Spawn détecté : " .. name)
-    
+    print(GetFormattedName(brainrot))
     if ShouldIBuy(brainrot) then
-        print("🎯 Cible VALIDE ajoutée à la liste d'achat : " .. brainrot.DisplayName)
         table.insert(BrainrotsToBuy, brainrot)
-        
         brainrot.Prompt.PromptShown:Connect(function()
-            print("⚡ Prompt affiché pour " .. brainrot.DisplayName .. " ! Tentative d'achat...")
             fireproximityprompt(brainrot.Prompt)
         end)
-        
         brainrot.Prompt.Triggered:Connect(function()
-            print("💰 ACHAT RÉUSSI (Triggered) : " .. brainrot.DisplayName)
             brainrot.BuyStatus = "Buyed"
-            isProcessing = false -- On libère le bot pour la suite
+            isProcessing = false
         end)
-    else
-        print("⏩ Cible ignorée (pas de mutation) : " .. brainrot.DisplayName)
     end
 end
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
-    task.wait(1.5) 
-    print("🔍 Analyse d'un nouvel animal...")
-    local template = FindOverhead(animal)
-    local prompt = FindPrompt(animal)
-    
-    if not template then print("❌ Overhead non trouvé pour " .. animal.Name) return end
-    if not prompt then print("❌ Prompt non trouvé pour " .. animal.Name) return end
-    
-    local container = template:FindFirstChild("AnimalOverhead")
-    local displayObj = container:FindFirstChild("DisplayName")
-    local priceObj = container:FindFirstChild("Price")
-    local mutationObj = container:FindFirstChild("Mutation")
-    
-    local start = tick()
-    while (tick() - start) < 5 do
-        if displayObj and displayObj.Text ~= "" then break end
-        task.wait(0.2)
+    if botStarted then
+        task.wait(1.5) 
+        local template = FindOverhead(animal)
+        local prompt = FindPrompt(animal)
+        if not template then return end
+        local container = template:FindFirstChild("AnimalOverhead")
+        if not container then return end
+        local displayObj = container:FindFirstChild("DisplayName")
+        local priceObj = container:FindFirstChild("Price")
+        local mutationObj = container:FindFirstChild("Mutation")
+        local start = tick()
+        while (tick() - start) < 5 do
+            if displayObj and displayObj.Text ~= "" then break end
+            task.wait(0.2)
+        end
+        if not displayObj or displayObj.Text == "" then return end
+        local actualMutation = "Default"
+        if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
+            actualMutation = mutationObj.Text
+        end
+        local animalData = {
+            Animal = animal,
+            AnimalOverhead = container,
+            DisplayName = displayObj.Text,
+            Mutation = actualMutation,
+            GenerationStr = container:FindFirstChild("Generation") and container.Generation.Text or "1/s",
+            Generation = ParseGeneration(container:FindFirstChild("Generation") and container.Generation.Text or "1/s"),
+            Price = priceObj.Text,
+            Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
+            Traits = {},
+            Prompt = prompt,
+            BuyStatus = (currentBot == 1) and "Wait" or "Buyed"
+        }
+        OnBrainrotSpawn(animalData)
     end
-    
-    if not displayObj or displayObj.Text == "" then return end
-    
-    local actualMutation = "Default"
-    if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
-        actualMutation = mutationObj.Text
-    end
-    
-    local animalData = {
-        Animal = animal,
-        AnimalOverhead = container,
-        DisplayName = displayObj.Text,
-        Mutation = actualMutation,
-        GenerationStr = container:FindFirstChild("Generation") and container.Generation.Text or "1/s",
-        Generation = ParseGeneration(container:FindFirstChild("Generation") and container.Generation.Text or "1/s"),
-        Price = priceObj.Text,
-        Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
-        Traits = {},
-        Prompt = prompt,
-        BuyStatus = "Wait"
-    }
-    OnBrainrotSpawn(animalData)
 end)
 
 task.spawn(function()
-    print("🤖 Boucle de mouvement démarrée.")
     while true do
+        task.wait(0.05)
+        if not botStarted then continue end
+
         local character = Players.LocalPlayer.Character
         local humanoid = character and character:FindFirstChild("Humanoid")
         local rootPart = character and character:FindFirstChild("HumanoidRootPart")
         
-        if rootPart and #BrainrotsToBuy > 0 then
+        if rootPart and humanoid and #BrainrotsToBuy > 0 then
             local targetAnimal = nil
-            local maxZ = -math.huge
+            local bestPriority = (currentBot == 1) and -math.huge or math.huge
+            -- Définition de la profondeur fixe selon le bot choisi
+            local fixedZ = (currentBot == 1) and -355 or -60
 
             for i = #BrainrotsToBuy, 1, -1 do
                 local brainrot = BrainrotsToBuy[i]
                 
                 if not brainrot.Animal or not brainrot.Animal.Parent then
-                    print("🗑️ Animal supprimé du jeu, retrait de la liste : " .. brainrot.DisplayName)
                     table.remove(BrainrotsToBuy, i)
                     continue
                 end
 
                 local animalPos = brainrot.Animal:GetPivot().Position
 
-                -- Reset si remonté
-                if animalPos.Z < 130 and brainrot.BuyStatus == "Buyed" then
-                    brainrot.BuyStatus = "Wait"
-                    print("🔄 " .. brainrot.DisplayName .. " est remonté. Prêt pour un nouveau cycle.")
-                end
-
-                -- Recherche de la cible la plus proche du bord (Max Z)
-                if brainrot.BuyStatus == "Wait" and animalPos.Z > 130 then
-                    if animalPos.Z > maxZ then
-                        maxZ = animalPos.Z
-                        targetAnimal = brainrot
+                -- LOGIQUE DE FILTRAGE
+                if currentBot == 1 then
+                    -- BOT 1 : Z > 130
+                    if animalPos.Z < 130 and brainrot.BuyStatus == "Buyed" then 
+                        brainrot.BuyStatus = "Wait" 
+                    end
+                    if brainrot.BuyStatus == "Wait" and animalPos.Z > 130 then
+                        if animalPos.Z > bestPriority then 
+                            bestPriority = animalPos.Z
+                            targetAnimal = brainrot
+                        end
+                    end
+                else
+                    -- BOT 2 : Z < 130
+                    if animalPos.Z > 130 and brainrot.BuyStatus == "Buyed" then 
+                        brainrot.BuyStatus = "Wait" 
+                    end
+                    if brainrot.BuyStatus == "Wait" and animalPos.Z < 130 then
+                        if animalPos.Z < bestPriority then 
+                            bestPriority = animalPos.Z
+                            targetAnimal = brainrot
+                        end
                     end
                 end
             end
 
-            -- Mouvement
-            if targetAnimal and not isProcessing then
+            -- EXÉCUTION DU MOUVEMENT
+            if targetAnimal then
                 local animalX = targetAnimal.Animal:GetPivot().Position.X
-                local distanceX = math.abs(rootPart.Position.X - animalX)
+                local myX = rootPart.Position.X
+                local distanceX = math.abs(myX - animalX)
                 
-                -- On ne log le mouvement que si on doit vraiment bouger
-                if distanceX > 2 then
-                    print("🏃 Déplacement vers " .. targetAnimal.DisplayName .. " (X: " .. math.floor(animalX) .. " | Z: " .. math.floor(maxZ) .. ")")
-                end
+                -- Position cible avec le Z spécifique au bot
+                local targetPos = Vector3.new(animalX, rootPart.Position.Y, fixedZ)
                 
-                local targetPos = Vector3.new(animalX, rootPart.Position.Y, rootPart.Position.Z)
-                humanoid:MoveTo(targetPos)
-                
-                -- Si on est très proche, on peut considérer qu'on est en train de processer
-                if distanceX < 3 then
-                    isProcessing = true
-                    print("📍 Arrivé sur cible. Verrouillage activé pour l'achat de " .. targetAnimal.DisplayName)
-                    
-                    -- Sécurité : si le Triggered ne vient jamais, on débloque après 4 secondes
-                    task.delay(4, function()
-                        if isProcessing then
-                            isProcessing = false
-                            print("⚠️ Verrouillage libéré par timeout (achat trop long)")
+                if not isProcessing then
+                    humanoid:MoveTo(targetPos)
+
+                    -- Alignement X précis
+                    if distanceX < 1.5 then
+                        isProcessing = true
+                        print("📍 Bot " .. currentBot .. " aligné. Achat de : " .. targetAnimal.DisplayName)
+                        
+                        if targetAnimal.Prompt then
+                            fireproximityprompt(targetAnimal.Prompt)
                         end
-                    end)
+
+                        task.delay(4, function()
+                            if isProcessing and targetAnimal.BuyStatus == "Wait" then
+                                isProcessing = false
+                            end
+                        end)
+                    end
+                else
+                    -- Ajustement continu du X pendant l'achat
+                    if distanceX > 0.5 then
+                        humanoid:MoveTo(targetPos)
+                    end
                 end
             end
         end
-        
-        task.wait(0.1) 
     end
 end)

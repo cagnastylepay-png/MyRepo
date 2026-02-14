@@ -76,7 +76,7 @@ local function ParseOverhead(overhead)
     local displayObj = overhead:FindFirstChild("DisplayName")
     if not displayObj or displayObj.Text == "" then return nil end
     local mutationObj = overhead:FindFirstChild("Mutation")
-    local actualMutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
+    local actualMutation = (mutationObj and mutationObj.Visible) and mutationObj.Text or "Default"
     return {
         DisplayName = displayObj.Text,
         Mutation    = actualMutation,
@@ -174,9 +174,9 @@ local function GetFormattedName(brainrot)
     local components = {}
 
     -- 1. On ajoute la mutation si elle n'est pas "Default"
-    if brainrot.Mutation and brainrot.Mutation ~= "Default" then
-        table.insert(components, brainrot.Mutation)
-    end
+    --if brainrot.Mutation and brainrot.Mutation ~= "Default" then
+    table.insert(components, brainrot.Mutation)
+    --end
 
     -- 2. On ajoute les traits
     for _, trait in ipairs(brainrot.Traits) do

@@ -12,6 +12,8 @@ local ScreenGui = Instance.new("ScreenGui")
 local Frame = Instance.new("Frame")
 local StartBtn = Instance.new("TextButton")
 local BotSelector = Instance.new("TextButton")
+local AxeBot2 = -60
+local AxeBot1 = -355
 
 -- Setup du GUI
 ScreenGui.Parent = game.CoreGui
@@ -60,17 +62,30 @@ Instance.new("UICorner", StartBtn)
 
 StartBtn.MouseButton1Click:Connect(function()
     botStarted = not botStarted
+    
     if botStarted then
+        -- ENREGISTREMENT DE LA POSITION ACTUELLE
+        local char = Players.LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        
+        if root then
+            local currentZ = root.Position.Z
+            if currentBot == 1 then
+                AxeBot1 = currentZ
+                print("📍 Axe BOT 1 enregistré sur Z : " .. AxeBot1)
+            else
+                AxeBot2 = currentZ
+                print("📍 Axe BOT 2 enregistré sur Z : " .. AxeBot2)
+            end
+        end
+
         StartBtn.Text = "STOP"
         StartBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-        print("🚀 Bot démarré en Mode " .. currentBot)
     else
         StartBtn.Text = "START"
         StartBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-        print("🛑 Bot arrêté.")
     end
 end)
-
 -- [VARIABLES INITIALES MANQUANTES]
 local BrainrotsToBuy = {}
 local isProcessing = false
@@ -247,7 +262,7 @@ task.spawn(function()
             local targetAnimal = nil
             local bestPriority = (currentBot == 1) and -math.huge or math.huge
             -- Définition de la profondeur fixe selon le bot choisi
-            local fixedZ = (currentBot == 1) and -355 or -60
+            local fixedZ = (currentBot == 1) and AxeBot1 or AxeBot2
 
             for i = #BrainrotsToBuy, 1, -1 do
                 local brainrot = BrainrotsToBuy[i]

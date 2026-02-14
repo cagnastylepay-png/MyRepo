@@ -79,9 +79,9 @@ local function GetFormattedName(brainrot)
     end
 
     -- 2. On ajoute les traits
-    for _, trait in ipairs(brainrot.Traits) do
-        table.insert(components, trait)
-    end
+    --for _, trait in ipairs(brainrot.Traits) do
+    --    table.insert(components, trait)
+    --end
 
     -- 3. Construction de la partie entre crochets
     local prefix = ""
@@ -90,7 +90,7 @@ local function GetFormattedName(brainrot)
     end
 
     -- 4. Assemblage final
-    return prefix .. brainrot.Name .. " -> " .. brainrot.Rarity .. " " .. brainrot.GenerationStr
+    return prefix .. brainrot.DisplayName .. " -> " .. brainrot.Rarity .. " " .. brainrot.GenerationStr
 end
 
 local function OnBrainrotSpawn(brainrot) 

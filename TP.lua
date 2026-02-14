@@ -11,7 +11,10 @@ local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
-local currentId = 0
+
+local Brainrots = {} -- Table pour stocker les IDs
+local server = nil    -- Variable pour la connexion WebSocket
+local reconnectDelay = 5 -- Délai de reconnexion en secondes
 
 local function SendToServer(method, data)
     if server then

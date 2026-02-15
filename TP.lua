@@ -15,6 +15,10 @@ local BotSelector = Instance.new("TextButton")
 local AxeBot2 = -60
 local AxeBot1 = -355
 
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
 -- Setup du GUI
 ScreenGui.Parent = game.CoreGui
 Frame.Size = UDim2.new(0, 160, 0, 110)
@@ -59,6 +63,7 @@ StartBtn.Font = Enum.Font.SourceSansBold
 StartBtn.TextSize = 16
 StartBtn.Parent = Frame
 Instance.new("UICorner", StartBtn)
+
 
 StartBtn.MouseButton1Click:Connect(function()
     botStarted = not botStarted
@@ -249,15 +254,25 @@ RenderedAnimals.ChildAdded:Connect(function(animal)
     end
 end)
 
+local function MoveTo(targetPos)
+    local path = PathfindingService:CreatePath({AgentRadius = 5, AgentHeight = 6, AgentCanJump = true})
+	local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
+	if success and path.Status == Enum.PathStatus.Success then
+	    for _, waypoint in ipairs(path:GetWaypoints()) do
+	        if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+	        humanoid:MoveTo(waypoint.Position)
+	        humanoid.MoveToFinished:Wait() 
+	    end
+	else
+	    humanoid:MoveTo(targetPos)
+	end
+end
+
 task.spawn(function()
     while true do
-        task.wait(0.05)
+        task.wait(0.2)
         if not botStarted then continue end
 
-        local character = Players.LocalPlayer.Character
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        
         if rootPart and humanoid and #BrainrotsToBuy > 0 then
             local targetAnimal = nil
             local bestPriority = (currentBot == 1) and -math.huge or math.huge
@@ -310,17 +325,13 @@ task.spawn(function()
                 local targetPos = Vector3.new(animalX, rootPart.Position.Y, fixedZ)
                 
                 if not isProcessing then
-                    humanoid:MoveTo(targetPos)
+                    MoveTo(targetPos)
 
                     -- Alignement X précis
                     if distanceX < 1.5 then
                         isProcessing = true
                         print("📍 Bot " .. currentBot .. " aligné. Achat de : " .. targetAnimal.DisplayName)
                         
-                        if targetAnimal.Prompt then
-                            fireproximityprompt(targetAnimal.Prompt)
-                        end
-
                         task.delay(4, function()
                             if isProcessing and targetAnimal.BuyStatus == "Wait" then
                                 isProcessing = false
@@ -330,10 +341,21 @@ task.spawn(function()
                 else
                     -- Ajustement continu du X pendant l'achat
                     if distanceX > 0.5 then
-                        humanoid:MoveTo(targetPos)
+                        MoveTo(targetPos)
                     end
                 end
+            else
+                MoveTo(Vector3.new(-413,-7,783))
             end
         end
     end
 end)
+
+local function AutoStart()
+    MoveTo(Vector3.new(-413,-7,783))
+    botStarted = true
+    StartBtn.Text = "STOP"
+    StartBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+end
+
+AutoStart()

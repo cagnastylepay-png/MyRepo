@@ -265,90 +265,91 @@ local function MoveTo(targetPos)
 end
 
 task.spawn(function()
+    -- Définition du point de repos
+    local idlePos = Vector3.new(-413, -7, 208)
+
     while true do
         task.wait(0.2)
         if not botStarted then continue end
 
-        if rootPart and humanoid and #BrainrotsToBuy > 0 then
+        -- Sécurité : On récupère le perso à chaque itération pour éviter les erreurs après un respawn
+        character = Players.LocalPlayer.Character
+        humanoid = character and character:FindFirstChild("Humanoid")
+        rootPart = character and character:FindFirstChild("HumanoidRootPart")
+
+        if rootPart and humanoid then
             local targetAnimal = nil
             local bestPriority = (currentBot == 1) and -math.huge or math.huge
-            -- Définition de la profondeur fixe selon le bot choisi
             local fixedZ = (currentBot == 1) and AxeBot1 or AxeBot2
 
-            for i = #BrainrotsToBuy, 1, -1 do
-                local brainrot = BrainrotsToBuy[i]
-                
-                if not brainrot.Animal or not brainrot.Animal.Parent then
-                    table.remove(BrainrotsToBuy, i)
-                    continue
-                end
-
-                local animalPos = brainrot.Animal:GetPivot().Position
-
-                -- LOGIQUE DE FILTRAGE
-                if currentBot == 1 then
-                    -- BOT 1 : Z > 130
-                    if animalPos.Z < 130 and brainrot.BuyStatus == "Buyed" then 
-                        brainrot.BuyStatus = "Wait" 
+            -- Recherche d'une cible
+            if #BrainrotsToBuy > 0 then
+                for i = #BrainrotsToBuy, 1, -1 do
+                    local brainrot = BrainrotsToBuy[i]
+                    
+                    if not brainrot.Animal or not brainrot.Animal.Parent then
+                        table.remove(BrainrotsToBuy, i)
+                        continue
                     end
-                    if brainrot.BuyStatus == "Wait" and animalPos.Z > 130 then
-                        if animalPos.Z > bestPriority then 
-                            bestPriority = animalPos.Z
-                            targetAnimal = brainrot
+
+                    local animalPos = brainrot.Animal:GetPivot().Position
+
+                    -- LOGIQUE DE FILTRAGE
+                    if currentBot == 1 then
+                        if animalPos.Z < 130 and brainrot.BuyStatus == "Buyed" then brainrot.BuyStatus = "Wait" end
+                        if brainrot.BuyStatus == "Wait" and animalPos.Z > 130 then
+                            if animalPos.Z > bestPriority then 
+                                bestPriority = animalPos.Z
+                                targetAnimal = brainrot
+                            end
                         end
-                    end
-                else
-                    -- BOT 2 : Z < 130
-                    if animalPos.Z > 130 and brainrot.BuyStatus == "Buyed" then 
-                        brainrot.BuyStatus = "Wait" 
-                    end
-                    if brainrot.BuyStatus == "Wait" and animalPos.Z < 130 then
-                        if animalPos.Z < bestPriority then 
-                            bestPriority = animalPos.Z
-                            targetAnimal = brainrot
+                    else
+                        if animalPos.Z > 130 and brainrot.BuyStatus == "Buyed" then brainrot.BuyStatus = "Wait" end
+                        if brainrot.BuyStatus == "Wait" and animalPos.Z < 130 then
+                            if animalPos.Z < bestPriority then 
+                                bestPriority = animalPos.Z
+                                targetAnimal = brainrot
+                            end
                         end
                     end
                 end
             end
 
-            -- EXÉCUTION DU MOUVEMENT
+            -- EXÉCUTION DU MOUVEMENT OU REPOS
             if targetAnimal then
+                -- Logique d'achat (ton code existant)
                 local animalX = targetAnimal.Animal:GetPivot().Position.X
-                local myX = rootPart.Position.X
-                local distanceX = math.abs(myX - animalX)
-                
-                -- Position cible avec le Z spécifique au bot
+                local distanceX = math.abs(rootPart.Position.X - animalX)
                 local targetPos = Vector3.new(animalX, rootPart.Position.Y, fixedZ)
                 
                 if not isProcessing then
-                    MoveTo(targetPos)
-
-                    -- Alignement X précis
+                    humanoid:MoveTo(targetPos)
                     if distanceX < 1.5 then
                         isProcessing = true
                         print("📍 Bot " .. currentBot .. " aligné. Achat de : " .. targetAnimal.DisplayName)
                         
                         task.delay(4, function()
-                            if isProcessing and targetAnimal.BuyStatus == "Wait" then
-                                isProcessing = false
-                            end
+                            if isProcessing then isProcessing = false end
                         end)
                     end
                 else
-                    -- Ajustement continu du X pendant l'achat
-                    if distanceX > 0.5 then
-                        MoveTo(targetPos)
-                    end
+                    if distanceX > 0.5 then humanoid:MoveTo(targetPos) end
                 end
-            else
-                MoveTo(Vector3.new(-413,-7,783))
+
+            elseif not isProcessing then
+                -- LOGIQUE DE REPOS : Si pas de cible et pas en train d'acheter
+                local distToIdle = (rootPart.Position - idlePos).Magnitude
+                
+                if distToIdle > 5 then -- Si on est à plus de 5 studs du point de repos
+                    humanoid:MoveTo(idlePos)
+                end
             end
         end
     end
 end)
 
 local function AutoStart()
-    MoveTo(Vector3.new(-413,-7,783))
+    MoveTo(Vector3.new(-413,-7,208))
     botStarted = true
     StartBtn.Text = "STOP"
     StartBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)

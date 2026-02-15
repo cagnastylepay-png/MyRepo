@@ -15,7 +15,7 @@ local BotSelector = Instance.new("TextButton")
 local AxeBot2 = -60
 local AxeBot1 = -355
 
-local character = player.Character or player.CharacterAdded:Wait()
+local character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
 
@@ -69,12 +69,8 @@ StartBtn.MouseButton1Click:Connect(function()
     botStarted = not botStarted
     
     if botStarted then
-        -- ENREGISTREMENT DE LA POSITION ACTUELLE
-        local char = Players.LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        
-        if root then
-            local currentZ = root.Position.Z
+        if rootPart then
+            local currentZ = rootPart.Position.Z
             if currentBot == 1 then
                 AxeBot1 = currentZ
                 print("📍 Axe BOT 1 enregistré sur Z : " .. AxeBot1)

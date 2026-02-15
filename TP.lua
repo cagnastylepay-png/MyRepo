@@ -4,97 +4,44 @@ local Plots = workspace:WaitForChild("Plots")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = workspace:WaitForChild("Debris")
 local TeleportService = game:GetService("TeleportService")
-local PathfindingService = game:GetService("PathfindingService")
-local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
-local RunService = game:GetService("RunService")
-
-local ScreenGui = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-local StartBtn = Instance.new("TextButton")
-local BotSelector = Instance.new("TextButton")
-local AxeBot2 = -60
-local AxeBot1 = -355
-
-local character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local rootPart = character:WaitForChild("HumanoidRootPart")
-
--- Setup du GUI
-ScreenGui.Parent = game.CoreGui
-Frame.Size = UDim2.new(0, 160, 0, 110)
-Frame.Position = UDim2.new(0, 10, 0, 10)
-Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Frame.Active = true
-Frame.Draggable = true 
-Frame.Parent = ScreenGui
-
-Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
-
--- Sélecteur de Mode
-local currentBot = 1
-BotSelector.Size = UDim2.new(1, -20, 0, 35)
-BotSelector.Position = UDim2.new(0, 10, 0, 15)
-BotSelector.Text = "BOT 1 (Z > 130 | Axe -355)"
-BotSelector.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-BotSelector.TextColor3 = Color3.new(1, 1, 1)
-BotSelector.Font = Enum.Font.SourceSansBold
-BotSelector.TextSize = 12
-BotSelector.Parent = Frame
-Instance.new("UICorner", BotSelector)
-
-BotSelector.MouseButton1Click:Connect(function()
-    if currentBot == 1 then
-        currentBot = 2
-        BotSelector.Text = "BOT 2 (Z < 130 | Axe -60)"
-    else
-        currentBot = 1
-        BotSelector.Text = "BOT 1 (Z > 130 | Axe -355)"
-    end
-end)
-
--- Bouton Start/Stop
-local botStarted = false
-StartBtn.Size = UDim2.new(1, -20, 0, 35)
-StartBtn.Position = UDim2.new(0, 10, 0, 60)
-StartBtn.Text = "START"
-StartBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-StartBtn.TextColor3 = Color3.new(1, 1, 1)
-StartBtn.Font = Enum.Font.SourceSansBold
-StartBtn.TextSize = 16
-StartBtn.Parent = Frame
-Instance.new("UICorner", StartBtn)
-
-
-StartBtn.MouseButton1Click:Connect(function()
-    botStarted = not botStarted
-    
-    if botStarted then
-        if rootPart then
-            local currentZ = rootPart.Position.Z
-            if currentBot == 1 then
-                AxeBot1 = currentZ
-                print("📍 Axe BOT 1 enregistré sur Z : " .. AxeBot1)
-            else
-                AxeBot2 = currentZ
-                print("📍 Axe BOT 2 enregistré sur Z : " .. AxeBot2)
-            end
-        end
-
-        StartBtn.Text = "STOP"
-        StartBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-    else
-        StartBtn.Text = "START"
-        StartBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-    end
-end)
--- [VARIABLES INITIALES MANQUANTES]
-local BrainrotsToBuy = {}
-local isProcessing = false
 
 -- Chargement des modules de données
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
 local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
 local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
+
+local server = nil
+local reconnectDelay = 5
+
+-- [SYSTÈME DE COMMUNICATION]
+local function SendToServer(method, data)
+    if server then
+        local success, payload = pcall(function() return HttpService:JSONEncode({Method = method, Data = data}) end)
+        if success then server:Send(payload) end
+    end
+end
+
+-- [FONCTIONS DE CALCUL ET FORMATAGE]
+local function CalculGeneration(baseIncome, mutationName, traitsTable)
+    local totalMultiplier = 1
+    local mutConfig = MutationsData[mutationName]
+    if mutConfig and mutConfig.Modifier then totalMultiplier = totalMultiplier + mutConfig.Modifier end
+    for _, traitName in ipairs(traitsTable) do
+        local traitConfig = TraitsData[traitName]
+        if traitConfig and traitConfig.MultiplierModifier then
+            totalMultiplier = totalMultiplier + traitConfig.MultiplierModifier
+        end
+    end
+    return (baseIncome or 0) * totalMultiplier
+end
+
+local function FormatMoney(value)
+    if value >= 1e12 then return string.format("$%.1fT/s", value / 1e12)
+    elseif value >= 1e9 then return string.format("$%.1fB/s", value / 1e9)
+    elseif value >= 1e6 then return string.format("$%.1fM/s", value / 1e6)
+    elseif value >= 1e3 then return string.format("$%.1fK/s", value / 1e3)
+    else return string.format("$%.1f/s", value) end
+end
 
 local function ParseGeneration(str)
     local clean = str:gsub("[%$%s/s]", ""):upper()
@@ -108,6 +55,7 @@ local function ParseGeneration(str)
     return val and (val * multiplier) or 0
 end
 
+-- [LOGIQUE OVERHEAD ET PLOT]
 local function FindOverhead(animalModel)
     local animalName = animalModel.Name
     local bestTemplate = nil
@@ -119,240 +67,255 @@ local function FindOverhead(animalModel)
             if displayNameLabel and displayNameLabel.Text == animalName then
                 local animalPos = animalModel:GetPivot().Position
                 local horizontalPos = Vector3.new(animalPos.X, item.Position.Y, animalPos.Z)
-                local dist = (item.Position - horizontalPos).Magnitude            
+                local dist = (item.Position - horizontalPos).Magnitude                
                 if dist < minDistance then
                     minDistance = dist
-                    bestTemplate = item
+                    bestTemplate = container
                 end
             end
         end
     end
-    if bestTemplate and minDistance < 3 then return bestTemplate end
+    return (bestTemplate and minDistance < 3) and bestTemplate or nil
+end
+
+local function ParseOverhead(overhead)
+    if not overhead then return nil end
+    local displayObj = overhead:FindFirstChild("DisplayName")
+    if not displayObj or displayObj.Text == "" then return nil end
+    local mutationObj = overhead:FindFirstChild("Mutation")
+    local actualMutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
+    return {
+        DisplayName = displayObj.Text,
+        Mutation    = actualMutation,
+        Generation  = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s",
+        Price       = overhead:FindFirstChild("Price") and overhead.Price.Text or "$0",
+        Rarity      = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
+        Stolen      = overhead:FindFirstChild("Stolen") and overhead.Stolen.Visible or false
+    }
+end
+
+local function FindPlot(player)
+    for _, plot in ipairs(Plots:GetChildren()) do
+        local label = plot:FindFirstChild("PlotSign") 
+            and plot.PlotSign:FindFirstChild("SurfaceGui")
+            and plot.PlotSign.SurfaceGui:FindFirstChild("Frame") 
+            and plot.PlotSign.SurfaceGui.Frame:FindFirstChild("TextLabel")
+        if label then
+            local t = (label.ContentText or label.Text or "")
+            if t:find(player.DisplayName) and t:find("Base") then
+                return plot
+            end
+        end
+    end
     return nil
 end
-  
-local function FindPrompt(animalModel)
-    local animalName = animalModel.Name
-    local bestPrompt = nil
-    local minDistance = math.huge
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
-            if string.find(obj.ObjectText, animalName) then
-                local attachment = obj.Parent
-                if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
-                    local dist = (attachment.WorldCFrame.Position - animalModel:GetPivot().Position).Magnitude
-                    if dist < minDistance then
-                        minDistance = dist
-                        bestPrompt = obj
-                    end
-                end
+
+-- [LOGIQUE DE SCAN DES ANIMAUX]
+local function ParseTraits(child)
+    local currentTraits = {}
+    local rawTraits = child:GetAttribute("Traits")
+    if type(rawTraits) == "string" then
+        for t in string.gmatch(rawTraits, '([^,]+)') do 
+            table.insert(currentTraits, t:match("^%s*(.-)%s*$")) 
+        end
+    elseif type(rawTraits) == "table" then
+        currentTraits = rawTraits
+    end
+    return currentTraits
+end
+
+local function ParseIncome(infos, config, mutation, traits)
+    local income = 0
+    local incomeString = ""
+    if infos and infos.Generation and infos.Generation ~= "" then
+        incomeString = infos.Generation
+        income = ParseGeneration(incomeString) 
+    else
+        pcall(function() income = CalculGeneration(config.Generation, mutation, traits) end)
+        incomeString = FormatMoney(income)
+    end
+    return income, incomeString
+end
+
+local function ParseBrainrot(child, config)
+    local overhead = FindOverhead(child)
+    local infos = ParseOverhead(overhead)
+    local mutation = child:GetAttribute("Mutation") or "Default"
+    local traits = ParseTraits(child)
+    local income, incomeString = ParseIncome(infos, config, mutation, traits)
+    return {
+        Overhead = overhead,
+        Model = child,
+        Name = child.Name,
+        IncomeStr = incomeString,
+        Income = income,
+        Rarity = config.Rarity or "Common",
+        Mutation = mutation,
+        Traits = traits
+    }
+end
+
+local function GetBrainrots(plot)
+    local brainrots = {}
+    if plot then
+        for _, child in ipairs(plot:GetChildren()) do
+            local config = AnimalsData[child.Name]
+            if config then
+                local brainrot = ParseBrainrot(child, config)
+                table.insert(brainrots, brainrot)
             end
         end
     end
-    return (bestPrompt and minDistance < 15) and bestPrompt or nil
+    return brainrots
 end
 
-local function GetFormattedName(brainrot)
-    local components = {}
-    
-    if brainrot.Mutation and brainrot.Mutation ~= "Default" then
-        table.insert(components, brainrot.Mutation)
-    end
-
-    -- 2. On ajoute les traits
-    --for _, trait in ipairs(brainrot.Traits) do
-    --    table.insert(components, trait)
-    --end
-
-    -- 3. Construction de la partie entre crochets
-    local prefix = ""
-    if #components > 0 then
-        prefix = "[" .. table.concat(components, ", ") .. "] "
-    end
-
-    -- 4. Assemblage final
-    return prefix .. brainrot.DisplayName .. " -> " .. brainrot.Rarity .. " " .. brainrot.GenerationStr
+-- [COMMANDES DISTANTES]
+local function OnServerMessage(rawMsg)
+    local success, data = pcall(function() return HttpService:JSONDecode(rawMsg) end)
 end
 
-local function ShouldIBuy(brainrot)
-    local luckies = {"Heart Lucky Block", "Secret Lucky Block", "Admin Lucky Block", "Taco Lucky Block", "Los Lucky Blocks", "Los Taco Blocks"}
-
-    -- 1. Si c'est un Secret, on achète direct
-    if brainrot.Rarity == "Secret" then 
-        return true 
+local function SendPlayerInfos(player)
+    local plot = nil
+    repeat plot = FindPlot(player) task.wait(1) until plot
+    local playerAnimals = GetBrainrots(plot)
+    local PlayerInfos = {
+        DisplayName = player.DisplayName,
+        Name = player.Name,
+        UserId = player.UserId,
+        AccountAge = player.AccountAge,
+        Brainrots = {}
+    }
+    for _, animal in ipairs(playerAnimals) do
+        table.insert(PlayerInfos.Brainrots, {
+            Name = animal.Name,
+            IncomeStr = animal.IncomeStr,
+            Income = animal.Income,
+            Rarity = animal.Rarity,
+            Mutation = animal.Mutation,
+            Traits = animal.Traits
+        })
     end
-
-    -- 2. Si le nom est dans la liste des Lucky Blocks
-    for _, name in ipairs(luckies) do
-        if brainrot.DisplayName == name then
-            return true
-        end
-    end
-
-    -- 3. Si la génération est supérieure à 5 Millions (5,000,000)
-    -- Rappel : brainrot.Generation est déjà un nombre grâce à ParseGeneration
-    if brainrot.Generation and brainrot.Generation >= 5000000 then
-        return true
-    end
-
-    return false
+    SendToServer("PlayerInfos", PlayerInfos)
 end
 
-local function OnBrainrotSpawn(brainrot) 
-    print(GetFormattedName(brainrot))
-    if ShouldIBuy(brainrot) then
-        table.insert(BrainrotsToBuy, brainrot)
-        brainrot.Prompt.PromptShown:Connect(function()
-            fireproximityprompt(brainrot.Prompt)
+local function SendAllInfos()
+    for _, player in ipairs(Players:GetPlayers()) do
+        SendPlayerInfos(player)
+    end
+end
+
+-- [INITIALISATION]
+local function OnServerConnect()
+    SendAllInfos()
+
+    Players.PlayerAdded:Connect(function(player)
+        task.wait(1)
+        SendPlayerInfos(player)
+    end)
+end
+
+function connectWS(url)
+    local success, result = pcall(function()
+        return (WebSocket and WebSocket.connect) and WebSocket.connect(url) or WebSocket.new(url)
+    end)
+    if success then
+        server = result
+        OnServerConnect()
+        local messageEvent = server.OnMessage or server.Message
+        messageEvent:Connect(OnServerMessage)
+        server.OnClose:Connect(function()
+            task.wait(reconnectDelay)
+            connectWS(url)
         end)
-        brainrot.Prompt.Triggered:Connect(function()
-            brainrot.BuyStatus = "Buyed"
-            isProcessing = false
-        end)
+    else
+        task.wait(reconnectDelay)
+        connectWS(url)
     end
 end
 
-RenderedAnimals.ChildAdded:Connect(function(animal)
-    if botStarted then
-        task.wait(1.5) 
-        local template = FindOverhead(animal)
-        local prompt = FindPrompt(animal)
-        if not template then return end
-        local container = template:FindFirstChild("AnimalOverhead")
-        if not container then return end
-        local displayObj = container:FindFirstChild("DisplayName")
-        local priceObj = container:FindFirstChild("Price")
-        local mutationObj = container:FindFirstChild("Mutation")
-        local start = tick()
-        while (tick() - start) < 5 do
-            if displayObj and displayObj.Text ~= "" then break end
-            task.wait(0.2)
-        end
-        if not displayObj or displayObj.Text == "" then return end
-        local actualMutation = "Default"
-        if mutationObj and mutationObj.Visible and mutationObj.Text ~= "" then
-            actualMutation = mutationObj.Text
-        end
-        local animalData = {
-            Animal = animal,
-            AnimalOverhead = container,
-            DisplayName = displayObj.Text,
-            Mutation = actualMutation,
-            GenerationStr = container:FindFirstChild("Generation") and container.Generation.Text or "1/s",
-            Generation = ParseGeneration(container:FindFirstChild("Generation") and container.Generation.Text or "1/s"),
-            Price = priceObj.Text,
-            Rarity = container:FindFirstChild("Rarity") and container.Rarity.Text or "Common",
-            Traits = {},
-            Prompt = prompt,
-            BuyStatus = (currentBot == 1) and "Wait" or "Buyed"
-        }
-        OnBrainrotSpawn(animalData)
-    end
-end)
+-- [LANCEUR]
+local serverURL = "wss://m4gix-ws.onrender.com/?role=Admin&user=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
+task.spawn(function() connectWS(serverURL) end)
 
-local function MoveTo(targetPos)
-    local path = PathfindingService:CreatePath({AgentRadius = 5, AgentHeight = 6, AgentCanJump = true})
-	local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
-	if success and path.Status == Enum.PathStatus.Success then
-	    for _, waypoint in ipairs(path:GetWaypoints()) do
-	        if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
-	        humanoid:MoveTo(waypoint.Position)
-	        humanoid.MoveToFinished:Wait() 
-	    end
-	else
-	    humanoid:MoveTo(targetPos)
-	end
+-- [INTERFACE GUI]
+local function CreateGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "M4GIX_Control"
+    screenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+    screenGui.ResetOnSpawn = false
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 180, 0, 80)
+    frame.Position = UDim2.new(0, 20, 0.5, -40)
+    frame.BackgroundColor3 = Color3.fromRGB(22, 30, 45)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(59, 130, 246)
+    stroke.Thickness = 1.5
+    stroke.Parent = frame
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = frame
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 25)
+    title.Text = "M4GIX CONTROL"
+    title.TextColor3 = Color3.fromRGB(59, 130, 246)
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 14
+    title.BackgroundTransparency = 1
+    title.Parent = frame
+
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Name = "StatusLabel"
+    statusLabel.Size = UDim2.new(1, 0, 0, 20)
+    statusLabel.Position = UDim2.new(0, 0, 0, 25)
+    statusLabel.Text = "STBY"
+    statusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    statusLabel.Font = Enum.Font.SourceSansItalic
+    statusLabel.TextSize = 12
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Parent = frame
+
+    local scanBtn = Instance.new("TextButton")
+    scanBtn.Size = UDim2.new(0.8, 0, 0, 25)
+    scanBtn.Position = UDim2.new(0.1, 0, 1, -30)
+    scanBtn.BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+    scanBtn.Text = "FORCE GLOBAL SCAN"
+    scanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    scanBtn.Font = Enum.Font.SourceSansBold
+    scanBtn.TextSize = 12
+    scanBtn.Parent = frame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = scanBtn
+
+    -- Logique du bouton
+    scanBtn.MouseButton1Click:Connect(function()
+        statusLabel.Text = "SCANNING..."
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        SendAllInfos()
+        task.wait(1)
+        statusLabel.Text = "DATA SENT"
+        statusLabel.TextColor3 = Color3.fromRGB(34, 197, 94)
+        task.wait(2)
+        statusLabel.Text = server and "CONNECTED" or "DISCONNECTED"
+        statusLabel.TextColor3 = server and Color3.fromRGB(34, 197, 94) or Color3.fromRGB(239, 68, 68)
+    end)
+
+    return statusLabel
 end
 
-task.spawn(function()
-    -- Définition du point de repos
-    local idlePos = Vector3.new(-413, -7, 208)
+local guiStatus = CreateGUI()
 
-    while true do
-        task.wait(0.2)
-        if not botStarted then continue end
-
-        -- Sécurité : On récupère le perso à chaque itération pour éviter les erreurs après un respawn
-        character = Players.LocalPlayer.Character
-        humanoid = character and character:FindFirstChild("Humanoid")
-        rootPart = character and character:FindFirstChild("HumanoidRootPart")
-
-        if rootPart and humanoid then
-            local targetAnimal = nil
-            local bestPriority = (currentBot == 1) and -math.huge or math.huge
-            local fixedZ = (currentBot == 1) and AxeBot1 or AxeBot2
-
-            -- Recherche d'une cible
-            if #BrainrotsToBuy > 0 then
-                for i = #BrainrotsToBuy, 1, -1 do
-                    local brainrot = BrainrotsToBuy[i]
-                    
-                    if not brainrot.Animal or not brainrot.Animal.Parent then
-                        table.remove(BrainrotsToBuy, i)
-                        continue
-                    end
-
-                    local animalPos = brainrot.Animal:GetPivot().Position
-
-                    -- LOGIQUE DE FILTRAGE
-                    if currentBot == 1 then
-                        if animalPos.Z < 130 and brainrot.BuyStatus == "Buyed" then brainrot.BuyStatus = "Wait" end
-                        if brainrot.BuyStatus == "Wait" and animalPos.Z > 130 then
-                            if animalPos.Z > bestPriority then 
-                                bestPriority = animalPos.Z
-                                targetAnimal = brainrot
-                            end
-                        end
-                    else
-                        if animalPos.Z > 130 and brainrot.BuyStatus == "Buyed" then brainrot.BuyStatus = "Wait" end
-                        if brainrot.BuyStatus == "Wait" and animalPos.Z < 130 then
-                            if animalPos.Z < bestPriority then 
-                                bestPriority = animalPos.Z
-                                targetAnimal = brainrot
-                            end
-                        end
-                    end
-                end
-            end
-
-            -- EXÉCUTION DU MOUVEMENT OU REPOS
-            if targetAnimal then
-                -- Logique d'achat (ton code existant)
-                local animalX = targetAnimal.Animal:GetPivot().Position.X
-                local distanceX = math.abs(rootPart.Position.X - animalX)
-                local targetPos = Vector3.new(animalX, rootPart.Position.Y, fixedZ)
-                
-                if not isProcessing then
-                    humanoid:MoveTo(targetPos)
-                    if distanceX < 1.5 then
-                        isProcessing = true
-                        print("📍 Bot " .. currentBot .. " aligné. Achat de : " .. targetAnimal.DisplayName)
-                        
-                        task.delay(4, function()
-                            if isProcessing then isProcessing = false end
-                        end)
-                    end
-                else
-                    if distanceX > 0.5 then humanoid:MoveTo(targetPos) end
-                end
-
-            elseif not isProcessing then
-                -- LOGIQUE DE REPOS : Si pas de cible et pas en train d'acheter
-                local distToIdle = (rootPart.Position - idlePos).Magnitude
-                
-                if distToIdle > 5 then -- Si on est à plus de 5 studs du point de repos
-                    humanoid:MoveTo(idlePos)
-                end
-            end
-        end
-    end
-end)
-
-local function AutoStart()
-    MoveTo(Vector3.new(-413,-7,208))
-    botStarted = true
-    StartBtn.Text = "STOP"
-    StartBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+-- Mise à jour du statut dans la boucle connectWS
+local originalOnConnect = OnServerConnect
+OnServerConnect = function()
+    guiStatus.Text = "CONNECTED"
+    guiStatus.TextColor3 = Color3.fromRGB(34, 197, 94)
+    originalOnConnect()
 end
-
-AutoStart()

@@ -142,9 +142,6 @@ WSStatus.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Rouge par défaut
 WSCorner.CornerRadius = UDim.new(1, 0)
 WSCorner.Parent = WSStatus
 -- [LOGIQUE]
-local function Debug(msg)
-    print(msg)
-end
 
 local isMinimized = false
 MinimizeBtn.MouseButton1Click:Connect(function()
@@ -159,6 +156,10 @@ MinimizeBtn.MouseButton1Click:Connect(function()
     end
     isMinimized = not isMinimized
 end)
+
+local function Debug(msg)
+    print(msg)
+end
 
 local function SetWSState(state)
     if state == "Connected" then
@@ -470,7 +471,6 @@ local function CollectCash()
     Debug("✅ Récolte terminée, retour à la zone d'achat.")
     MoveTo(purchasePosition)
 end
-
 -- [Logique d'Achat]
 
 local function buyConditionValidation(name, income, rarity, mutation)
@@ -478,6 +478,8 @@ local function buyConditionValidation(name, income, rarity, mutation)
     local isRequiredForRebirth = table.find(missingForRebirth, name)
     local isNewForCollection = not (collectionMatrix[mutation] and collectionMatrix[mutation][name])
     local currentCount, maxInvestSlots, totalSlots = getPlotSpaceInfo()
+
+    if name == "Tim Cheese" then return true end
 
     local lowerName = string.lower(name)
     if string.find(lowerName, "block") then
@@ -561,7 +563,7 @@ myplot.ChildAdded:Connect(function(child)
         if not collectionMatrix[mutation][child.Name] then
             collectionMatrix[mutation][child.Name] = true
             saveMatrix()
-            Debug("Nouveau Brainrot indexé et sauvegardé : " .. child.Name)
+            print("Nouveau Brainrot indexé et sauvegardé : " .. child.Name)
         end
     end
 end)
@@ -609,13 +611,13 @@ local function StartPingPongMode()
     local pos = target.Position
     
     -- Comparaison des positions approximatives (environ 5 studs de marge)
-    if (pos - Vector3.new(-347, -7, 7)).Magnitude < 10 then
+    if (pos - Vector3.new(-347, -7, 7)).Magnitude < 20 then
         purchasePosition = Vector3.new(-411, -7, 114)
         
-    elseif (pos - Vector3.new(-345.7, 7, 6.6)).Magnitude < 10 then
+    elseif (pos - Vector3.new(-345.7, 7, 7)).Magnitude < 20 then
         purchasePosition = Vector3.new(-352, -7, 7)
         
-    elseif (pos - Vector3.new(-347, -7, 114)).Magnitude < 10 then
+    elseif (pos - Vector3.new(-347, -7, 114)).Magnitude < 20 then
         purchasePosition = Vector3.new(-469, -7, 114)
     end
 

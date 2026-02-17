@@ -24,7 +24,7 @@ local myplot = nil
 local lastCollectTick = tick()
 local fileName = localPlayer.Name .. "_Index.json"
 local isStarted = false
-local mode = "IndexAndRebirth" -- Modes: "IndexAndRebirth" or "PingPong"
+local mode = "Idle" -- Modes: "IndexAndRebirth" or "PingPong"
 local purchasePosition = Vector3.new(-413, -7, 208)
 
 local server = nil
@@ -35,7 +35,7 @@ local Title = Instance.new("TextLabel")
 local IndexBtn = Instance.new("TextButton")
 local PingPongBtn = Instance.new("TextButton")
 local SendInfoBtn = Instance.new("TextButton")
-local StopBtn = Instance.new("TextButton")
+local BuyBtn = Instance.new("TextButton")
 local MinimizeBtn = Instance.new("TextButton")
 local StatusLabel = Instance.new("TextLabel")
 local UIListLayout = Instance.new("UIListLayout")
@@ -118,9 +118,9 @@ SendInfoBtn.Parent = BtnContainer
 SendInfoBtn.Text = "SEND PLAYER INFOS"
 StyleButton(SendInfoBtn, Color3.fromRGB(158, 105, 0))
 
-StopBtn.Parent = BtnContainer
-StopBtn.Text = "STOP BOT"
-StyleButton(StopBtn, Color3.fromRGB(183, 28, 28))
+BuyBtn.Parent = BtnContainer
+BuyBtn.Text = "START SIMPLE BUY"
+StyleButton(BuyBtn, Color3.fromRGB(183, 28, 28))
 
 StatusLabel.Parent = BtnContainer
 StatusLabel.BackgroundTransparency = 1
@@ -517,7 +517,7 @@ local function buyConditionValidation(price, name, income, rarity, mutation)
     if string.find(lowerName, "block") then
         if not string.find(lowerName, "mythic") and not string.find(lowerName, "god") then
             if currentCount < totalSlots then
-                Debug("✅ [ACHAT]: Block standard détecté (Remplissage plot)")
+                Debug("✅ [ACHAT]: Lucky Block détecté")
                 return true
             end
         end
@@ -610,7 +610,7 @@ task.spawn(function()
         if isStarted then
             local now = tick()
 
-            if mode == "IndexAndRebirth" then
+            if mode == "IndexAndRebirth" or mode == "SimpleBuy" then
                 local animalCount, _, _ = getPlotSpaceInfo()
 
                 -- 1. Cycle de Récolte & Rebirth (toutes les 120s)
@@ -620,7 +620,7 @@ task.spawn(function()
                         CollectCash()
                         
                         -- On vérifie SI on peut rebirth après avoir ramassé les sous
-                        if VerifyCanRebirth() then
+                        if mode == "IndexAndRebirth" and VerifyCanRebirth() then
                             Debug("✨ [REBIRTH]: Conditions remplies ! Lancement de la procédure...")
                             -- Ici, appelle ta fonction pour cliquer sur le bouton Renaissance
                             -- ExecuteRebirth() 
@@ -651,6 +651,13 @@ local function StartIndexAndRebirthMode()
     purchasePosition = Vector3.new(-410, -7, 208)
     MoveTo(purchasePosition)
     mode = "IndexAndRebirth"
+    isStarted = true
+end
+
+local function StartSimpleBuyMode()
+    purchasePosition = Vector3.new(-410, -7, 208)
+    MoveTo(purchasePosition)
+    mode = "SimpleBuy"
     isStarted = true
 end
 
@@ -740,8 +747,6 @@ function connectWS(url)
     end
 end
 
-
-
 IndexBtn.MouseButton1Click:Connect(function()
     StatusLabel.Text = "Status: Indexing..."
     StartIndexAndRebirthMode()
@@ -752,11 +757,9 @@ PingPongBtn.MouseButton1Click:Connect(function()
     StartPingPongMode()
 end)
 
-StopBtn.MouseButton1Click:Connect(function()
-    isStarted = false
-    mode = "Idle"
-    StatusLabel.Text = "Status: STOPPED"
-    StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+BuyBtn.MouseButton1Click:Connect(function()
+    StatusLabel.Text = "Status: Simple Buy active"
+    StartSimpleBuyMode()
 end)
 
 SendInfoBtn.MouseButton1Click:Connect(function()
@@ -770,3 +773,6 @@ end)
 -- [LANCEUR]
 local serverURL = "wss://m4gix-ws.onrender.com/?role=Admin&user=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
 task.spawn(function() connectWS(serverURL) end)
+
+StatusLabel.Text = "Status: Simple Buy active"
+StartSimpleBuyMode()

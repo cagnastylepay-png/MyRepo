@@ -580,6 +580,7 @@ RenderedAnimals.ChildAdded:Connect(function(animal)
         local rarity = overHead:FindFirstChild("Rarity") and overHead.Rarity.Text or "Common"
 
         if buyConditionValidation(animalData.Price, name, income, rarity, mutation) then
+            prompt.MaxActivationDistance = 20
             prompt.PromptShown:Connect(function()
                 fireproximityprompt(prompt)
             end)

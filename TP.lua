@@ -560,37 +560,45 @@ RenderedAnimals.ChildAdded:Connect(function(animal)
     -- 4. LOGIQUE D'ACHAT
     if playerCash.Value >= animalData.Price then
         if buyConditionValidation(name, income, rarity, mutation) then
-            
-            -- CONDITION DE DISTANCE : Si on est à moins de 20 studs (marge de sécurité)
-            if distance <= 20 then
-                print("✅ [PORTÉE OK]: Achat immédiat en cours...")
-                
-                -- On force l'achat sans attendre l'événement "Shown"
-                fireproximityprompt(prompt)
-                
-                warn("💰 [SUCCÈS]: " .. name .. " acheté !")
-            else
-                -- Si on est trop loin, on demande au bot de se rapprocher de l'animal
-                print("🚶 [TROP LOIN]: On se déplace vers l'animal...")
-                humanoid:MoveTo(promptPos)
-                
-                -- On attend d'être arrivé ou d'être assez proche
-                local arrived = false
-                local timeout = tick() + 3 -- Max 3 secondes pour arriver
-                
-                repeat
-                    task.wait(0.1)
+    
+            -- On définit la zone de "tir" (Rayon où le bouton est cliquable)
+            local activationRadius = 20 
+            local checkTimeout = tick() + 10 -- On surveille l'animal pendant max 10 sec
+    
+            print("🎯 [CIBLE]: " .. name .. " validé. En attente d'approche...")
+
+            -- Boucle de surveillance : On attend que l'animal passe devant nous
+            repeat
+                task.wait(0.1) -- Scan rapide pour ne pas rater le passage
+        
+                -- Mise à jour de la distance pendant que l'animal bouge
+                if prompt.Parent then
+                    local promptPos = (prompt.Parent:IsA("Attachment") and prompt.Parent.WorldPosition) or prompt.Parent.Position
                     distance = (rootPart.Position - promptPos).Magnitude
-                until distance <= 15 or tick() > timeout
-                
-                if distance <= 15 then
-                    fireproximityprompt(prompt)
-                    warn("💰 [SUCCÈS]: Achat après déplacement !")
+                else
+                    break -- L'animal a disparu ou a été acheté
+                end
+        
+            until distance <= activationRadius or tick() > checkTimeout
+
+            -- Si l'animal est entré dans notre zone
+            if distance <= activationRadius then
+                print("✅ [PORTÉE OK]: " .. name .. " est à portée (Dist: " .. math.floor(distance) .. "). Achat !")
+        
+                fireproximityprompt(prompt)
+        
+                warn("💰 [SUCCÈS]: " .. name .. " acheté au passage !")
+            else
+                if tick() > checkTimeout then
+                    print("⏰ [TIMEOUT]: " .. name .. " est passé trop loin ou a mis trop de temps.")
+                else
+                    print("❌ [PERDU]: L'animal n'est plus disponible.")
                 end
             end
+
         else
-            print("🚫 [REFUS]: Conditions d'achat non remplies.")
-        end
+            print("🚫 [REFUS]: Conditions non remplies pour " .. name)
+        end    
     else
         print("💸 [CASH]: Pas assez d'argent.")
     end

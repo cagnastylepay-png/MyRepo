@@ -427,21 +427,44 @@ end
 -- [Logique de Récolte]
 
 local function CollectCash()
-    if not myplot then return end
+    if not myplot then 
+        print("❌ Erreur: myplot est nil") 
+        return 
+    end
+    
     local podiums = myplot:FindFirstChild("AnimalPodiums")
-    if not podiums then return end
+    if not podiums then 
+        print("❌ Erreur: AnimalPodiums introuvable dans le plot") 
+        return 
+    end
 
     local targets = {"1", "5", "10", "6"}
-    print("Début du cycle de récolte...")
+    print("🚀 Début du cycle de récolte...")
 
     for _, id in ipairs(targets) do
         local p = podiums:FindFirstChild(id)
-        local hitbox = p and p:FindFirstChild("Hitbox")
-        if hitbox then
-            MoveTo(hitbox.Position)
-            task.wait(0.5)
+        if p then
+            -- Recherche récursive ou chemin précis selon ton explorer :
+            -- Podium -> Base -> Claim -> Hitbox
+            local hitbox = p:FindFirstChild("Hitbox", true) 
+
+            if hitbox and hitbox:IsA("BasePart") then
+                print("🏃 Déplacement vers le podium " .. id .. " à la position : " .. tostring(hitbox.Position))
+                
+                -- On utilise le CFrame ou la Position
+                MoveTo(hitbox.Position) 
+                
+                -- Petite attente pour être sûr que le serveur valide la récolte
+                task.wait(0.7) 
+            else
+                print("⚠️ Hitbox introuvable pour le podium " .. id)
+            end
+        else
+            print("⚠️ Podium " .. id .. " introuvable")
         end
     end
+    
+    print("✅ Récolte terminée, retour à la zone d'achat.")
     MoveTo(purchasePosition)
 end
 
@@ -544,18 +567,17 @@ end)
 
 local function boostPrompt(obj)
     if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
-        obj.MaxActivationDistance = 40 -- Portée augmentée à 40 studs
-        obj.HoldDuration = 0            -- Achat instantané (pas besoin de rester appuyé)
+        obj.MaxActivationDistance = 30
     end
 end
 
 for _, descendant in ipairs(workspace:GetDescendants()) do
-    --boostPrompt(descendant)
+    boostPrompt(descendant)
 end
 
 workspace.DescendantAdded:Connect(function(descendant)
     task.delay(0.1, function()
-        --boostPrompt(descendant)
+        boostPrompt(descendant)
     end)
 end)
 

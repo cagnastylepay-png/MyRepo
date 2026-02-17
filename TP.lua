@@ -142,6 +142,9 @@ WSStatus.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Rouge par défaut
 WSCorner.CornerRadius = UDim.new(1, 0)
 WSCorner.Parent = WSStatus
 -- [LOGIQUE]
+local function Debug(msg)
+    print(msg)
+end
 
 local isMinimized = false
 MinimizeBtn.MouseButton1Click:Connect(function()
@@ -428,18 +431,18 @@ end
 
 local function CollectCash()
     if not myplot then 
-        print("❌ Erreur: myplot est nil") 
+        Debug("❌ Erreur: myplot est nil") 
         return 
     end
     
     local podiums = myplot:FindFirstChild("AnimalPodiums")
     if not podiums then 
-        print("❌ Erreur: AnimalPodiums introuvable dans le plot") 
+        Debug("❌ Erreur: AnimalPodiums introuvable dans le plot") 
         return 
     end
 
     local targets = {"1", "5", "10", "6"}
-    print("🚀 Début du cycle de récolte...")
+    Debug("🚀 Début du cycle de récolte...")
 
     for _, id in ipairs(targets) do
         local p = podiums:FindFirstChild(id)
@@ -449,7 +452,7 @@ local function CollectCash()
             local hitbox = p:FindFirstChild("Hitbox", true) 
 
             if hitbox and hitbox:IsA("BasePart") then
-                print("🏃 Déplacement vers le podium " .. id .. " à la position : " .. tostring(hitbox.Position))
+                Debug("🏃 Déplacement vers le podium " .. id .. " à la position : " .. tostring(hitbox.Position))
                 
                 -- On utilise le CFrame ou la Position
                 MoveTo(hitbox.Position) 
@@ -457,14 +460,14 @@ local function CollectCash()
                 -- Petite attente pour être sûr que le serveur valide la récolte
                 task.wait(0.7) 
             else
-                print("⚠️ Hitbox introuvable pour le podium " .. id)
+                Debug("⚠️ Hitbox introuvable pour le podium " .. id)
             end
         else
-            print("⚠️ Podium " .. id .. " introuvable")
+            Debug("⚠️ Podium " .. id .. " introuvable")
         end
     end
     
-    print("✅ Récolte terminée, retour à la zone d'achat.")
+    Debug("✅ Récolte terminée, retour à la zone d'achat.")
     MoveTo(purchasePosition)
 end
 
@@ -475,8 +478,6 @@ local function buyConditionValidation(name, income, rarity, mutation)
     local isRequiredForRebirth = table.find(missingForRebirth, name)
     local isNewForCollection = not (collectionMatrix[mutation] and collectionMatrix[mutation][name])
     local currentCount, maxInvestSlots, totalSlots = getPlotSpaceInfo()
-
-    if name == "Tim Cheese" then return true end
 
     local lowerName = string.lower(name)
     if string.find(lowerName, "block") then
@@ -560,25 +561,9 @@ myplot.ChildAdded:Connect(function(child)
         if not collectionMatrix[mutation][child.Name] then
             collectionMatrix[mutation][child.Name] = true
             saveMatrix()
-            print("Nouveau Brainrot indexé et sauvegardé : " .. child.Name)
+            Debug("Nouveau Brainrot indexé et sauvegardé : " .. child.Name)
         end
     end
-end)
-
-local function boostPrompt(obj)
-    if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
-        obj.MaxActivationDistance = 30
-    end
-end
-
-for _, descendant in ipairs(workspace:GetDescendants()) do
-    boostPrompt(descendant)
-end
-
-workspace.DescendantAdded:Connect(function(descendant)
-    task.delay(0.1, function()
-        boostPrompt(descendant)
-    end)
 end)
 
 -- [Boucle de Routine]
@@ -592,7 +577,7 @@ task.spawn(function()
                 local animalCount, _, _ = getPlotSpaceInfo()
 
                 -- 1. Récolte (toutes les 5 minutes)
-                if (now - lastCollectTick) >= 300 then
+                if (now - lastCollectTick) >= 120 then
                     if animalCount > 0 then
                         CollectCash()
                     end

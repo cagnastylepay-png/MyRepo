@@ -26,9 +26,10 @@ local fileName = localPlayer.Name .. "_Index.json"
 local isStarted = false
 local mode = "Idle" -- Modes: "IndexAndRebirth" or "PingPong"
 local purchasePosition = Vector3.new(-413, -7, 208)
-
 local server = nil
 local reconnectDelay = 5
+local isDebugMode = false
+
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
 local Title = Instance.new("TextLabel")
@@ -40,7 +41,8 @@ local MinimizeBtn = Instance.new("TextButton")
 local StatusLabel = Instance.new("TextLabel")
 local UIListLayout = Instance.new("UIListLayout")
 local UICorner = Instance.new("UICorner")
-local UserInputService = game:GetService("UserInputService")
+local StopBtn = Instance.new("TextButton")
+local DebugToggleBtn = Instance.new("TextButton")
 
 -- Configuration du ScreenGui
 ScreenGui.Name = "GeminiManager"
@@ -52,7 +54,7 @@ MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 MainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
-MainFrame.Size = UDim2.new(0, 200, 0, 300) -- Taille augmentée pour le bouton Stop
+MainFrame.Size = UDim2.new(0, 200, 0, 380)
 MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.ClipsDescendants = true -- Utile pour la réduction
@@ -66,7 +68,7 @@ Title.BackgroundTransparency = 1
 Title.Size = UDim2.new(0.8, 0, 0, 40)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.Font = Enum.Font.GothamBold
-Title.Text = "BRAINROT BOSS"
+Title.Text = "M4GIX HUB"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 14
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -122,6 +124,18 @@ BuyBtn.Parent = BtnContainer
 BuyBtn.Text = "START SIMPLE BUY"
 StyleButton(BuyBtn, Color3.fromRGB(183, 28, 28))
 
+-- Bouton STOP (Rouge vif)
+StopBtn.Name = "StopBtn"
+StopBtn.Parent = BtnContainer
+StopBtn.Text = "STOP ALL"
+StyleButton(StopBtn, Color3.fromRGB(200, 0, 0))
+
+-- Bouton TOGGLE DEBUG (Type Checkbox)
+DebugToggleBtn.Name = "DebugToggleBtn"
+DebugToggleBtn.Parent = BtnContainer
+DebugToggleBtn.Text = "DEBUG MODE: OFF"
+StyleButton(DebugToggleBtn, Color3.fromRGB(80, 80, 80))
+
 StatusLabel.Parent = BtnContainer
 StatusLabel.BackgroundTransparency = 1
 StatusLabel.Size = UDim2.new(1, 0, 0, 25)
@@ -150,7 +164,7 @@ MinimizeBtn.MouseButton1Click:Connect(function()
         BtnContainer.Visible = false
         MinimizeBtn.Text = "+"
     else
-        MainFrame:TweenSize(UDim2.new(0, 200, 0, 300), "Out", "Quart", 0.3, true)
+        MainFrame:TweenSize(UDim2.new(0, 200, 0, 380), "Out", "Quart", 0.3, true)
         BtnContainer.Visible = true
         MinimizeBtn.Text = "—"
     end
@@ -158,7 +172,9 @@ MinimizeBtn.MouseButton1Click:Connect(function()
 end)
 
 local function Debug(msg)
-    print(msg)
+    if isDebugMode then 
+        print(msg)
+    end
 end
 
 local function SetWSState(state)
@@ -747,6 +763,8 @@ function connectWS(url)
     end
 end
 
+
+
 IndexBtn.MouseButton1Click:Connect(function()
     StatusLabel.Text = "Status: Indexing..."
     StartIndexAndRebirthMode()
@@ -770,6 +788,24 @@ SendInfoBtn.MouseButton1Click:Connect(function()
     StatusLabel.Text = oldText
 end)
 
+StopBtn.MouseButton1Click:Connect(function()
+    isStarted = false
+    mode = "Idle"
+    StatusLabel.Text = "Status: Stopped"
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+end)
+
+DebugToggleBtn.MouseButton1Click:Connect(function()
+    isDebugMode = not isDebugMode
+    
+    if isDebugMode then
+        DebugToggleBtn.Text = "DEBUG MODE: ON"
+        DebugToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 0) -- Jaune/Orange
+    else
+        DebugToggleBtn.Text = "DEBUG MODE: OFF"
+        DebugToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80) -- Gris
+    end
+end)
 -- [LANCEUR]
 local serverURL = "wss://m4gix-ws.onrender.com/?role=Admin&user=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
 task.spawn(function() connectWS(serverURL) end)

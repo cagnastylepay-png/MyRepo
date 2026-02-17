@@ -688,10 +688,10 @@ local function StartPingPongMode()
         purchasePosition = Vector3.new(-411, -7, 112)
         
     elseif (pos - Vector3.new(-472, 7, 113)).Magnitude < 20 then
-        purchasePosition = Vector3.new(-351, -7, 10)
+        purchasePosition = Vector3.new(-353, -7, 15)
         
     elseif (pos - Vector3.new(-347, -7, 114)).Magnitude < 20 then
-        purchasePosition = Vector3.new(-468, -7, 111)
+        purchasePosition = Vector3.new(-468, -7, 107)
     end
 
     MoveTo(purchasePosition)

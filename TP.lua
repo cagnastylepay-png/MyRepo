@@ -526,83 +526,80 @@ end
 RenderedAnimals.ChildAdded:Connect(function(animal)
     if not isStarted then return end
     
-    -- On laisse le temps au serveur de poser l'animal au sol
-    task.wait(1.5) 
+    -- On lance la surveillance dans un thread séparé (task.spawn) 
+    -- pour ne pas bloquer la détection des prochains animaux qui spawnent
+    task.spawn(function()
+        -- Petit temps d'attente initial pour que l'Overhead se charge
+        task.wait(1.5) 
 
-    local name = animal.Name
-    print("---------------------------------------------")
-    print("🔍 [SCAN]: " .. name .. " détecté.")
+        local name = animal.Name
+        print("🔍 [NOUVEAU SPAIN]: " .. name .. ". Début de la surveillance...")
 
-    -- 1. Récupération des données et des objets
-    local animalData = AnimalsData[name]
-    local overHead = FindOverhead(animal)
-    local prompt = FindPrompt(animal)
-
-    if not animalData or not overHead or not prompt then 
-        print("⚠️ [SKIP]: Infos incomplètes pour " .. name)
-        return 
-    end
-
-    -- 2. Extraction des infos (Mutation, Revenu, Rareté)
-    local mutationObj = overHead:FindFirstChild("Mutation")
-    local mutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
-    local income = ParseGeneration(overHead:FindFirstChild("Generation") and overHead.Generation.Text or "0/s")
-    local rarity = overHead:FindFirstChild("Rarity") and overHead.Rarity.Text or "Common"
-
-    -- 3. CALCUL DE LA DISTANCE (La sécurité que tu voulais)
-    -- On vérifie si on est assez proche du bouton d'achat
-    local characterPos = rootPart.Position
-    local promptPos = (prompt.Parent:IsA("Attachment") and prompt.Parent.WorldPosition) or prompt.Parent.Position
-    local distance = (characterPos - promptPos).Magnitude
-
-    print(string.format("📏 [DISTANCE]: %.1f studs de %s", distance, name))
-
-    -- 4. LOGIQUE D'ACHAT
-    if playerCash.Value >= animalData.Price then
-        if buyConditionValidation(name, income, rarity, mutation) then
-    
-            -- On définit la zone de "tir" (Rayon où le bouton est cliquable)
-            local activationRadius = 20 
-            local checkTimeout = tick() + 10 -- On surveille l'animal pendant max 10 sec
-    
-            print("🎯 [CIBLE]: " .. name .. " validé. En attente d'approche...")
-
-            -- Boucle de surveillance : On attend que l'animal passe devant nous
-            repeat
-                task.wait(0.1) -- Scan rapide pour ne pas rater le passage
+        -- 1. Récupération des données (On réessaye quelques fois si pas encore là)
+        local animalData = AnimalsData[name]
+        local overHead = nil
+        local prompt = nil
         
-                -- Mise à jour de la distance pendant que l'animal bouge
-                if prompt.Parent then
+        for i = 1, 5 do -- 5 tentatives pour trouver les composants
+            overHead = FindOverhead(animal)
+            prompt = FindPrompt(animal)
+            if overHead and prompt then break end
+            task.wait(1)
+        end
+
+        if not animalData or not overHead or not prompt then 
+            print("⚠️ [ABANDON]: Composants introuvables pour " .. name)
+            return 
+        end
+
+        -- 2. Extraction des infos
+        local mutationObj = overHead:FindFirstChild("Mutation")
+        local mutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
+        local income = ParseGeneration(overHead:FindFirstChild("Generation") and overHead.Generation.Text or "0/s")
+        local rarity = overHead:FindFirstChild("Rarity") and overHead.Rarity.Text or "Common"
+
+        -- 3. LOGIQUE D'ACHAT
+        if playerCash.Value >= animalData.Price then
+            if buyConditionValidation(name, income, rarity, mutation) then
+                
+                local activationRadius = 20 
+                local checkTimeout = tick() + 50 -- ATTENTE JUSQU'A 50 SECONDES
+                local isAchete = false
+                
+                print("🎯 [CIBLE VALIDÉE]: " .. name .. ". J'attends qu'il arrive (max 50s)...")
+
+                -- Boucle de surveillance active
+                while tick() < checkTimeout do
+                    if not prompt or not prompt.Parent then 
+                        print("❌ [DISPARU]: " .. name .. " n'est plus là.")
+                        break 
+                    end
+                    
+                    -- Calcul de la distance
                     local promptPos = (prompt.Parent:IsA("Attachment") and prompt.Parent.WorldPosition) or prompt.Parent.Position
-                    distance = (rootPart.Position - promptPos).Magnitude
-                else
-                    break -- L'animal a disparu ou a été acheté
-                end
-        
-            until distance <= activationRadius or tick() > checkTimeout
+                    local distance = (rootPart.Position - promptPos).Magnitude
 
-            -- Si l'animal est entré dans notre zone
-            if distance <= activationRadius then
-                print("✅ [PORTÉE OK]: " .. name .. " est à portée (Dist: " .. math.floor(distance) .. "). Achat !")
-        
-                fireproximityprompt(prompt)
-        
-                warn("💰 [SUCCÈS]: " .. name .. " acheté au passage !")
+                    if distance <= activationRadius then
+                        print("✅ [PORTÉE ATTEINTE]: Achat de " .. name .. " (Dist: " .. math.floor(distance) .. ")")
+                        fireproximityprompt(prompt)
+                        warn("💰 [SUCCÈS]: " .. name .. " acheté !")
+                        isAchete = true
+                        break
+                    end
+                    
+                    task.wait(0.2) -- Fréquence de scan (5 fois par seconde)
+                end
+
+                if not isAchete and tick() >= checkTimeout then
+                    print("⏰ [TIMEOUT]: " .. name .. " n'est jamais arrivé à portée après 50s.")
+                end
             else
-                if tick() > checkTimeout then
-                    print("⏰ [TIMEOUT]: " .. name .. " est passé trop loin ou a mis trop de temps.")
-                else
-                    print("❌ [PERDU]: L'animal n'est plus disponible.")
-                end
+                print("🚫 [REFUS]: " .. name .. " ne remplit pas les conditions.")
             end
-
         else
-            print("🚫 [REFUS]: Conditions non remplies pour " .. name)
-        end    
-    else
-        print("💸 [CASH]: Pas assez d'argent.")
-    end
-    print("---------------------------------------------")
+            print("💸 [CASH]: Trop pauvre pour " .. name)
+        end
+    end)
 end)
 -- [Initialisation]
 

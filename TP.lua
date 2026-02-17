@@ -448,159 +448,68 @@ end
 -- [Logique d'Achat]
 
 local function buyConditionValidation(name, income, rarity, mutation)
-    -- 1. Récupération des données d'état
     local missingForRebirth = getMissingCharacters()
-    local isRequiredForRebirth = table.find(missingForRebirth, name) ~= nil
-    
-    -- Vérification robuste de la matrix (évite les erreurs nil)
-    local isNewForCollection = true
-    if collectionMatrix[mutation] and collectionMatrix[mutation][name] then
-        isNewForCollection = false
-    end
-    
+    local isRequiredForRebirth = table.find(missingForRebirth, name)
+    local isNewForCollection = not (collectionMatrix[mutation] and collectionMatrix[mutation][name])
     local currentCount, maxInvestSlots, totalSlots = getPlotSpaceInfo()
-    local hasRoomTotal = currentCount < totalSlots
-    local hasRoomInvest = currentCount < maxInvestSlots
 
-    print(string.format("🧠 [DECISION] %s | Slots: %d/%d | New: %s | RebirthReq: %s", 
-        name, currentCount, totalSlots, tostring(isNewForCollection), tostring(isRequiredForRebirth)))
+    if name == "Tim Cheese" then return true end
 
-    -- 2. PRIORITÉ ABSOLUE : Tim Cheese
-    if name == "Tim Cheese" then 
-        print("✅ [OUI] Priorité Tim Cheese !")
-        return true 
-    end
-
-    -- 3. GESTION DES BLOCKS (Remplissage de base)
     local lowerName = string.lower(name)
     if string.find(lowerName, "block") then
-        -- On ignore les blocks trop chers ou rares pour ne pas gaspiller de slots invest
         if not string.find(lowerName, "mythic") and not string.find(lowerName, "god") then
-            if hasRoomTotal then
-                print("✅ [OUI] Block standard accepté (Remplissage).")
+            if currentCount < totalSlots then
                 return true
-            else
-                print("❌ [NON] Block ignoré : Plot plein.")
             end
         end
     end
 
-    -- 4. VALEUR EXCEPTIONNELLE (Secrets, OG, Grosses sommes)
-    -- On utilise les slots "Invest" (on garde 2 places libres pour le Rebirth)
-    if (rarity == "Secret" or rarity == "OG" or income > 1000000) then
-        if hasRoomInvest then
-            print("✅ [OUI] Valeur exceptionnelle (Secret/OG/1M+).")
-            return true
-        else
-            print("❌ [NON] Valeur élevée ignorée : Slots invest pleins ("..maxInvestSlots..").")
-        end
+    if (rarity == "Secret" or rarity == "OG" or income > 1000000) and currentCount < maxInvestSlots then
+        return true
     end
     
-    -- 5. LOGIQUE SPÉCIFIQUE AU MODE INDEX / REBIRTH
     if mode == "IndexAndRebirth" then
-        -- Si requis pour Rebirth : On utilise n'importe quel slot disponible (Total)
-        if isRequiredForRebirth then
-            if hasRoomTotal then
-                print("✅ [OUI] Requis pour le prochain Rebirth.")
-                return true
-            else
-                print("❌ [NON] Requis Rebirth mais Plot totalement plein.")
-            end
+        if isRequiredForRebirth and currentCount < totalSlots then
+            return true
         end
     
-        -- Si nouveau pour l'index : On utilise les slots Invest
-        if isNewForCollection then
-            if hasRoomInvest then
-                print("✅ [OUI] Nouveau pour l'index.")
-                return true
-            else
-                print("❌ [NON] Nouveau mais on garde de la place pour le Rebirth.")
-            end
+        if isNewForCollection and currentCount < maxInvestSlots then
+            return true
         end
     end
 
-    print("❌ [NON] Ne remplit aucune condition d'achat.")
     return false
 end
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
-    if not isStarted then return end
-    
-    -- On lance la surveillance dans un thread séparé (task.spawn) 
-    -- pour ne pas bloquer la détection des prochains animaux qui spawnent
-    task.spawn(function()
-        -- Petit temps d'attente initial pour que l'Overhead se charge
+    if isStarted then
         task.wait(1.5) 
 
         local name = animal.Name
-        print("🔍 [NOUVEAU SPAIN]: " .. name .. ". Début de la surveillance...")
-
-        -- 1. Récupération des données (On réessaye quelques fois si pas encore là)
         local animalData = AnimalsData[name]
-        local overHead = nil
-        local prompt = nil
+        if not animalData then return end
+
+        local overHead = FindOverhead(animal)
+        local prompt = FindPrompt(animal)
+        if not overHead or not prompt then return end
         
-        for i = 1, 5 do -- 5 tentatives pour trouver les composants
-            overHead = FindOverhead(animal)
-            prompt = FindPrompt(animal)
-            if overHead and prompt then break end
-            task.wait(1)
-        end
-
-        if not animalData or not overHead or not prompt then 
-            print("⚠️ [ABANDON]: Composants introuvables pour " .. name)
-            return 
-        end
-
-        -- 2. Extraction des infos
         local mutationObj = overHead:FindFirstChild("Mutation")
         local mutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
-        local income = ParseGeneration(overHead:FindFirstChild("Generation") and overHead.Generation.Text or "0/s")
+
+        local incomeStr = overHead:FindFirstChild("Generation") and overHead.Generation.Text or "1/s"
+        local income = ParseGeneration(incomeStr)
         local rarity = overHead:FindFirstChild("Rarity") and overHead.Rarity.Text or "Common"
 
-        -- 3. LOGIQUE D'ACHAT
         if playerCash.Value >= animalData.Price then
             if buyConditionValidation(name, income, rarity, mutation) then
-                
-                local activationRadius = 20 
-                local checkTimeout = tick() + 50 -- ATTENTE JUSQU'A 50 SECONDES
-                local isAchete = false
-                
-                print("🎯 [CIBLE VALIDÉE]: " .. name .. ". J'attends qu'il arrive (max 50s)...")
-
-                -- Boucle de surveillance active
-                while tick() < checkTimeout do
-                    if not prompt or not prompt.Parent then 
-                        print("❌ [DISPARU]: " .. name .. " n'est plus là.")
-                        break 
-                    end
-                    
-                    -- Calcul de la distance
-                    local promptPos = (prompt.Parent:IsA("Attachment") and prompt.Parent.WorldPosition) or prompt.Parent.Position
-                    local distance = (rootPart.Position - promptPos).Magnitude
-
-                    if distance <= activationRadius then
-                        print("✅ [PORTÉE ATTEINTE]: Achat de " .. name .. " (Dist: " .. math.floor(distance) .. ")")
-                        fireproximityprompt(prompt)
-                        warn("💰 [SUCCÈS]: " .. name .. " acheté !")
-                        isAchete = true
-                        break
-                    end
-                    
-                    task.wait(0.2) -- Fréquence de scan (5 fois par seconde)
-                end
-
-                if not isAchete and tick() >= checkTimeout then
-                    print("⏰ [TIMEOUT]: " .. name .. " n'est jamais arrivé à portée après 50s.")
-                end
-            else
-                print("🚫 [REFUS]: " .. name .. " ne remplit pas les conditions.")
+                prompt.PromptShown:Connect(function()
+                    fireproximityprompt(prompt)
+                end)
             end
-        else
-            print("💸 [CASH]: Trop pauvre pour " .. name)
         end
-    end)
+    end
 end)
+
 -- [Initialisation]
 
 loadMatrix()
@@ -641,12 +550,12 @@ local function boostPrompt(obj)
 end
 
 for _, descendant in ipairs(workspace:GetDescendants()) do
-    boostPrompt(descendant)
+    --boostPrompt(descendant)
 end
 
 workspace.DescendantAdded:Connect(function(descendant)
     task.delay(0.1, function()
-        boostPrompt(descendant)
+        --boostPrompt(descendant)
     end)
 end)
 

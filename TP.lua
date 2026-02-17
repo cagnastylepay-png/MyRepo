@@ -564,22 +564,12 @@ RenderedAnimals.ChildAdded:Connect(function(animal)
     if isStarted then
         task.wait(1.5) 
 
-        local name = animal.Name
-        local animalData = AnimalsData[name]
-        if not animalData then return end
-
         local overHead = FindOverhead(animal)
         local prompt = FindPrompt(animal)
         if not overHead or not prompt then return end
+        local infos = ParseOverhead(overHead)
         
-        local mutationObj = overHead:FindFirstChild("Mutation")
-        local mutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
-
-        local incomeStr = overHead:FindFirstChild("Generation") and overHead.Generation.Text or "1/s"
-        local income = ParseGeneration(incomeStr)
-        local rarity = overHead:FindFirstChild("Rarity") and overHead.Rarity.Text or "Common"
-
-        if buyConditionValidation(animalData.Price, name, income, rarity, mutation) then
+        if buyConditionValidation(ParseGeneration(infos.Price),infos.DisplayName,ParseGeneration(infos.Generation), infos.Rarity, infos.Mutation) then
             prompt.PromptShown:Connect(function()
                 fireproximityprompt(prompt)
             end)

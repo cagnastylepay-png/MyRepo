@@ -15,11 +15,17 @@ local localPlayer = Players.LocalPlayer
 local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
-local leaderstats = localPlayer:WaitForChild("leaderstats")
-local playerCash = leaderstats:WaitForChild("Cash")
+
+localPlayer.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    humanoid = newCharacter:WaitForChild("Humanoid")
+    rootPart = newCharacter:WaitForChild("HumanoidRootPart")
+    Debug("🔄 Personnage rafraîchi après respawn.")
+end)
 
 local myplot = nil
 local isStarted = false
+local isAnchorStarted = false
 local purchasePosition = Vector3.new(-413, -7, 208)
 local LOG_FILE = "debug_logs.json"
 local LogCache = {}

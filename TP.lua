@@ -171,7 +171,7 @@ local function ParseIncome(infos, config, mutation, traits)
 end
 
 local function MoveTo(targetPos)
-    local path = PathfindingService:CreatePath({AgentRadius = 3, AgentHeight = 6, AgentCanJump = true})
+    local path = PathfindingService:CreatePath({AgentRadius = 4, AgentHeight = 6, AgentCanJump = true})
     local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
     if success and path.Status == Enum.PathStatus.Success then
         for _, waypoint in ipairs(path:GetWaypoints()) do
@@ -360,7 +360,7 @@ task.spawn(function()
     while true do
         if isAnchorStarted then
             local dist = (rootPart.Position - purchasePosition).Magnitude
-            if dist > 5 then
+            if dist > 3 then
                 local velocity = rootPart.AssemblyLinearVelocity.Magnitude
                 if velocity < 1 then 
                     local x = math.floor(rootPart.Position.X)

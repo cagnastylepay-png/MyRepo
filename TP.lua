@@ -1,6 +1,8 @@
 local Debris = workspace:WaitForChild("Debris")
 
 local function FindOverhead(prompt)
+    if not prompt then return end
+
     local bestOverhead = nil
     local minDistance = math.huge
     for _, item in ipairs(Debris:GetChildren()) do
@@ -31,6 +33,8 @@ local function FindOverhead(prompt)
 end
 
 local function InitPurchasePrompt(prompt)
+    if not prompt then return end
+
     print("🆕 [Prompt]: Init d'un prompt d'achat")
     
     local overhead = FindOverhead(prompt)

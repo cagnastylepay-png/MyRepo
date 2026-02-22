@@ -1,5 +1,21 @@
 local Debris = workspace:WaitForChild("Debris")
 
+-- 1. Conversion des chaînes (ex: "$1.5M/s") en nombres réels
+local function ParseGeneration(str)
+    local clean = str:gsub("[%$%s/s]", ""):upper()
+    local multipliers = {K = 1e3, M = 1e6, B = 1e9, T = 1e12}
+    
+    local numStr = clean:gsub("[%a]", "")
+    local suffix = clean:gsub("[%d%.]", "")
+    
+    local val = tonumber(numStr)
+    if not val then return 0 end
+    
+    return val * (multipliers[suffix] or 1)
+end
+
+
+-- 2. Recherche de l'overhead le plus proche
 local function FindOverhead(prompt)
     if not prompt or not prompt.Parent then return nil end
     
@@ -13,16 +29,9 @@ local function FindOverhead(prompt)
         if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
             local container = item:FindFirstChild("AnimalOverhead")
             if container then
-                local displayNameLabel = container:FindFirstChild("DisplayName")
-                local animalName = displayNameLabel and displayNameLabel.Text or "Inconnu"
-                
-                -- Calcul de la distance (X et Z uniquement pour la précision horizontale)
                 local promptpos = prompt.Parent.WorldCFrame.Position
                 local horizontalPos = Vector3.new(promptpos.X, item.Position.Y, promptpos.Z)
                 local dist = (item.Position - horizontalPos).Magnitude            
-                -- DEBUG PRINT: Affiche chaque overhead trouvé dans Debris
-                print(string.format("   📍 [Candidat]: %s | Distance: %.2f studs", animalName, dist))
-                
                 if dist < minDistance then
                     minDistance = dist
                     bestOverhead = container
@@ -31,21 +40,24 @@ local function FindOverhead(prompt)
         end
     end
 
-    -- Seuil de validation (Actuellement à 3)
-    local SEUIL = 3 
+    return (bestOverhead and minDistance < 3) and bestOverhead or nil
+end
 
-    if bestOverhead then
-        if minDistance <= SEUIL then
-            print(string.format("✅ [LIAISON]: Plus proche trouvé -> Distance: %.2f (Inférieur à %d)", minDistance, SEUIL))
-            return bestOverhead
-        else
-            print(string.format("⚠️ [DISTANCE]: Plus proche à %.2f studs, mais c'est TROP LOIN (Seuil: %d)", minDistance, SEUIL))
-        end
-    else
-        print("❌ [VIDE]: Aucun 'FastOverheadTemplate' trouvé dans Debris.")
+-- 3. Logique de décision d'achat
+local function ShouldBuy(name, mutation, gen, rarity)
+    print(string.format("%s %s ➜ %s %s", mutation, name, rarity, gen))
+    -- Priorité : Raretés spéciales
+    if rarity == "secret" or rarity == "og" then return true end
+    
+    -- Seuil de génération (1M+)
+    if ParseGeneration(gen) >= 1000000 then return true end
+    
+    -- Filtre spécifique "block" (excluant mythic/god selon ta logique)
+    if name:find("block") and not (name:find("mythic") or name:find("god")) then
+        return true
     end
     
-    return nil
+    return false
 end
 
 local function InitPurchasePrompt(prompt)
@@ -67,7 +79,20 @@ local function InitPurchasePrompt(prompt)
     end)
 
     if overhead then
-        print("✨ [OK]: Prompt lié avec succès.")
+        local displayObj = overhead:FindFirstChild("DisplayName")
+        if not displayObj or displayObj.Text == "" then return nil end
+        local mutationObj = overhead:FindFirstChild("Mutation")
+    
+        local name = displayObj.Text:lower()
+        local mutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text:lower() or "default"
+        local gen = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s"
+        local rarity = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text:lower() or "common"
+        
+        if ShouldBuy(name, mutation, gen, rarity) then
+            prompt.PromptShown:Connect(function()
+                fireproximityprompt(prompt)
+            end)
+        end
     end
 end
 

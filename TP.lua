@@ -19,165 +19,51 @@ local leaderstats = localPlayer:WaitForChild("leaderstats")
 local playerCash = leaderstats:WaitForChild("Cash")
 
 local myplot = nil
-local lastCollectTick = tick()
 local isStarted = false
-local mode = "Idle" -- Modes: "AutoBuy" or "PingPong"
 local purchasePosition = Vector3.new(-413, -7, 208)
-local isDebugMode = false
-local LOG_FILE = "Gemini_Bot_Logs.txt"
+local LOG_FILE = "debug_logs.json"
+local LogCache = {}
 
--- Initialisation du fichier (optionnel : écrase le log précédent au lancement)
-pcall(function()
-    writefile(LOG_FILE, "-- DÉBUT DE SESSION : " .. os.date("%X") .. " --\n")
-end)
-
-local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local Title = Instance.new("TextLabel")
-local PingPongBtn = Instance.new("TextButton")
-local BuyBtn = Instance.new("TextButton")
-local MinimizeBtn = Instance.new("TextButton")
-local StatusLabel = Instance.new("TextLabel")
-local UIListLayout = Instance.new("UIListLayout")
-local UICorner = Instance.new("UICorner")
-local StopBtn = Instance.new("TextButton")
-local DebugToggleBtn = Instance.new("TextButton")
-
--- Configuration du ScreenGui
-ScreenGui.Name = "GeminiManager"
-ScreenGui.Parent = localPlayer:WaitForChild("PlayerGui")
-ScreenGui.ResetOnSpawn = false
-
--- Cadre Principal
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
-MainFrame.Size = UDim2.new(0, 200, 0, 380)
-MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.ClipsDescendants = true -- Utile pour la réduction
-
-UICorner.Parent = MainFrame
-
--- Titre
-Title.Name = "Title"
-Title.Parent = MainFrame
-Title.BackgroundTransparency = 1
-Title.Size = UDim2.new(0.8, 0, 0, 40)
-Title.Position = UDim2.new(0, 10, 0, 0)
-Title.Font = Enum.Font.GothamBold
-Title.Text = "M4GIX HUB"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 14
-Title.TextXAlignment = Enum.TextXAlignment.Left
-
--- Bouton Réduire (Trait)
-MinimizeBtn.Name = "MinimizeBtn"
-MinimizeBtn.Parent = MainFrame
-MinimizeBtn.BackgroundTransparency = 1
-MinimizeBtn.Position = UDim2.new(0.8, 0, 0, 0)
-MinimizeBtn.Size = UDim2.new(0, 40, 0, 40)
-MinimizeBtn.Font = Enum.Font.GothamBold
-MinimizeBtn.Text = "—"
-MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeBtn.TextSize = 20
-
--- Container pour les boutons (pour la réduction)
-local BtnContainer = Instance.new("Frame")
-BtnContainer.Name = "BtnContainer"
-BtnContainer.Parent = MainFrame
-BtnContainer.BackgroundTransparency = 1
-BtnContainer.Position = UDim2.new(0, 0, 0, 45)
-BtnContainer.Size = UDim2.new(1, 0, 1, -45)
-
-UIListLayout.Parent = BtnContainer
-UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-UIListLayout.Padding = UDim.new(0, 8)
-
-local function StyleButton(btn, color)
-    btn.Size = UDim2.new(0.9, 0, 0, 35)
-    btn.BackgroundColor3 = color
-    btn.Font = Enum.Font.GothamSemibold
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.TextSize = 13
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = btn
-end
-
--- Création des Boutons
-PingPongBtn.Parent = BtnContainer
-PingPongBtn.Text = "START PING PONG"
-StyleButton(PingPongBtn, Color3.fromRGB(21, 101, 192))
-
-BuyBtn.Parent = BtnContainer
-BuyBtn.Text = "START SIMPLE BUY"
-StyleButton(BuyBtn, Color3.fromRGB(183, 28, 28))
-
--- Bouton STOP (Rouge vif)
-StopBtn.Name = "StopBtn"
-StopBtn.Parent = BtnContainer
-StopBtn.Text = "STOP ALL"
-StyleButton(StopBtn, Color3.fromRGB(200, 0, 0))
-
--- Bouton TOGGLE DEBUG (Type Checkbox)
-DebugToggleBtn.Name = "DebugToggleBtn"
-DebugToggleBtn.Parent = BtnContainer
-DebugToggleBtn.Text = "DEBUG MODE: OFF"
-StyleButton(DebugToggleBtn, Color3.fromRGB(80, 80, 80))
-
-StatusLabel.Parent = BtnContainer
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Size = UDim2.new(1, 0, 0, 25)
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.Text = "Status: Idle"
-StatusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-StatusLabel.TextSize = 12
-
-local WSStatus = Instance.new("Frame")
-local WSCorner = Instance.new("UICorner")
-
-WSStatus.Name = "WSStatus"
-WSStatus.Parent = MainFrame
-WSStatus.Position = UDim2.new(1, -25, 0, 12) -- En haut à droite à côté du titre
-WSStatus.Size = UDim2.new(0, 10, 0, 10)
-WSStatus.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Rouge par défaut
-
-WSCorner.CornerRadius = UDim.new(1, 0)
-WSCorner.Parent = WSStatus
--- [LOGIQUE]
-
-local isMinimized = false
-MinimizeBtn.MouseButton1Click:Connect(function()
-    if not isMinimized then
-        MainFrame:TweenSize(UDim2.new(0, 200, 0, 40), "Out", "Quart", 0.3, true)
-        BtnContainer.Visible = false
-        MinimizeBtn.Text = "+"
+-- 2. Chargement initial au démarrage
+local function LoadLogs()
+    if isfile(LOG_FILE) then
+        local success, content = pcall(function() return readfile(LOG_FILE) end)
+        if success then
+            local decodeSuccess, decoded = pcall(function() return HttpService:JSONDecode(content) end)
+            if decodeSuccess and type(decoded) == "table" then
+                LogCache = decoded
+            else
+                LogCache = {} -- Fichier corrompu ou vide
+            end
+        end
     else
-        MainFrame:TweenSize(UDim2.new(0, 200, 0, 380), "Out", "Quart", 0.3, true)
-        BtnContainer.Visible = true
-        MinimizeBtn.Text = "—"
-    end
-    isMinimized = not isMinimized
-end)
-
-local function Debug(msg)
-    local timestamp = os.date("[%H:%M:%S]")
-    local formattedMsg = timestamp .. " " .. tostring(msg)
-
-    if isDebugMode then 
-        print(formattedMsg) 
-    end
-
-    local success, err = pcall(function()
-        appendfile(LOG_FILE, formattedMsg .. "\n")
-    end)
-    if not success and isDebugMode then
-        warn("Impossible d'écrire dans le log : " .. tostring(err))
+        -- Si le fichier n'existe pas, on le crée vide
+        writefile(LOG_FILE, HttpService:JSONEncode({}))
+        LogCache = {}
     end
 end
 
+-- 3. Fonction Debug mise à jour
+local function Debug(msg)
+    local timestamp = os.date("%H:%M:%S")
+    local date = os.date("%d/%m/%Y")
+    
+    -- Création de l'entrée
+    local newEntry = {
+        date = date,
+        time = timestamp,
+        message = tostring(msg)
+    }
+    
+    if #LogCache > 500 then table.remove(LogCache, 1) end
+    table.insert(LogCache, newEntry)
+
+    -- Sauvegarde immédiate dans le fichier
+    local success, err = pcall(function()
+        local jsonContent = HttpService:JSONEncode(LogCache)
+        writefile(LOG_FILE, jsonContent)
+    end)
+end
 
 local function ParseGeneration(str)
     local clean = str:gsub("[%$%s/s]", ""):upper()
@@ -299,45 +185,9 @@ local function MoveTo(targetPos)
     end
 end
 
-local function CollectCash()
-    if not myplot then 
-        Debug("❌ Erreur: myplot est nil") 
-        return 
-    end
-    
-    local podiums = myplot:FindFirstChild("AnimalPodiums")
-    if not podiums then 
-        Debug("❌ Erreur: AnimalPodiums introuvable dans le plot") 
-        return 
-    end
-
-    local targets = {"1", "5", "6", "10"}
-    Debug("🚀 Début du cycle de récolte...")
-
-    for _, id in ipairs(targets) do
-        local p = podiums:FindFirstChild(id)
-        if p then
-            local hitbox = p:FindFirstChild("Hitbox", true) 
-            if hitbox and hitbox:IsA("BasePart") then
-                Debug("🏃 Déplacement vers le podium " .. id .. " à la position : " .. tostring(hitbox.Position))
-                MoveTo(hitbox.Position) 
-                task.wait(0.7) 
-            else
-                Debug("⚠️ Hitbox introuvable pour le podium " .. id)
-            end
-        else
-            Debug("⚠️ Podium " .. id .. " introuvable")
-        end
-    end
-    
-    Debug("✅ Récolte terminée, retour à la zone d'achat.")
-    MoveTo(purchasePosition)
-end
-
 local function buyConditionValidation(price, name, income, rarity, mutation)
 
     if (rarity == "Secret" or rarity == "OG" or income > 1000000) and currentCount < totalSlots then
-        Debug("✅ [ACHAT]: Valeur élevée détectée (Secret/OG/1M+)")
         return true
     end
     
@@ -347,14 +197,12 @@ end
 RenderedAnimals.ChildAdded:Connect(function(animal)
     if isStarted then
         task.wait(1.5)
-        --Debug(string.format("🧐 [ADDED]: %s ", animal.Name))
 
         local shouldBuy = false
         local lowerName = string.lower(animal.Name)
 
         if string.find(lowerName, "block") then
             if not string.find(lowerName, "mythic") and not string.find(lowerName, "god") then
-                Debug("✅ [ACHAT]: Lucky Block détecté")
                 shouldBuy = true
             end
         else
@@ -367,7 +215,6 @@ RenderedAnimals.ChildAdded:Connect(function(animal)
         end
         
         if shouldBuy then
-            lastCollectTick = tick()
             local prompt = FindPrompt(animal)
             prompt.PromptShown:Connect(function()
                 fireproximityprompt(prompt)
@@ -381,26 +228,121 @@ end)
 repeat myplot = FindPlot(localPlayer) task.wait(1) until myplot
 Debug("Base détectée : " .. myplot.Name)
 
+local function SetPosition()
+    purchasePosition = rootPart.Position
+end
+
+local function StartAnchor()
+    isAnchorStarted = true
+end
+
+local function StopAnchor()
+    isAnchorStarted = false
+end
+
+local function Start()
+    MoveTo(purchasePosition)
+    isStarted = true
+end
+
+local function Stop()
+    isStarted = false
+end
+
+local ScreenGui = Instance.new("ScreenGui", localPlayer.PlayerGui) -- Corrigé : localPlayer au lieu de player
+ScreenGui.Name = "GeminiControl"
+ScreenGui.ResetOnSpawn = false
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Name = "MainFrame"
+MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+MainFrame.Position = UDim2.new(0.05, 0, 0.4, 0)
+MainFrame.Size = UDim2.new(0, 160, 0, 150) -- Taille augmentée pour 3 boutons
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local UIListLayout = Instance.new("UIListLayout", MainFrame)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.Padding = UDim.new(0, 8)
+UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+
+-- Fonction pour les boutons ON/OFF (AutoBuy, Anchor)
+local function CreateSwitch(name, startFunc, stopFunc, status)
+    local Button = Instance.new("TextButton")
+    local isOn = status
+
+    Button.Name = name
+    Button.Parent = MainFrame
+    Button.Size = UDim2.new(0, 140, 0, 35)
+    Button.Font = Enum.Font.GothamBold
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.TextSize = 13
+
+    if isOn then
+        Button.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        Button.Text = name .. " Started"
+    else
+        Button.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        Button.Text = name .. " Stopped"
+    end
+
+    local UICorner = Instance.new("UICorner", Button)
+    UICorner.CornerRadius = UDim.new(0, 8)
+
+    Button.MouseButton1Click:Connect(function()
+        isOn = not isOn
+        if isOn then
+            Button.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+            Button.Text = name .. " Started"
+            startFunc()
+        else
+            Button.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            Button.Text = name .. " Stopped"
+            stopFunc()
+        end
+    end)
+    return Button
+end
+
+-- Fonction pour le bouton d'action unique (Set Position)
+local function CreateActionButton(name, actionFunc)
+    local Button = Instance.new("TextButton")
+    Button.Name = name
+    Button.Parent = MainFrame
+    Button.BackgroundColor3 = Color3.fromRGB(80, 80, 250) -- Bleu
+    Button.Size = UDim2.new(0, 140, 0, 35)
+    Button.Font = Enum.Font.GothamBold
+    Button.Text = name
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.TextSize = 13
+    
+    local UICorner = Instance.new("UICorner", Button)
+    UICorner.CornerRadius = UDim.new(0, 8)
+
+    Button.MouseButton1Click:Connect(function()
+        actionFunc()
+        -- Petit feedback visuel rapide
+        local oldText = Button.Text
+        Button.Text = "Position Set!"
+        task.wait(1)
+        Button.Text = oldText
+    end)
+end
+
+Start()
+StartAnchor()
+
+-- Création des boutons dans l'ordre
+CreateSwitch("AutoBuy", Start, Stop, isStarted)
+CreateSwitch("Anchor", StartAnchor, StopAnchor, isAnchorStarted)
+CreateActionButton("Set Position", SetPosition)
 
 -- [Boucle de Routine]
 
 task.spawn(function()
     while true do
-        if isStarted then
-            local now = tick()
-            
-            if mode == "AutoBuy" then
-                local animalCount, _, _ = getPlotSpaceInfo()
-
-                if (now - lastCollectTick) >= 120 then
-                    if animalCount > 0 then
-                        Debug("🌾 [CYCLE]: Début de la récolte périodique...")
-                        CollectCash()
-                    end
-                    lastCollectTick = tick()
-                end
-            end
-
+        if isAnchorStarted then
             local dist = (rootPart.Position - purchasePosition).Magnitude
             if dist > 5 then
                 local velocity = rootPart.AssemblyLinearVelocity.Magnitude
@@ -410,68 +352,6 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(1) 
+        task.wait(0.5) 
     end
 end)
-
-
-local function StartAutoBuyMode()
-    purchasePosition = Vector3.new(-410, -7, 208)
-    MoveTo(purchasePosition)
-    mode = "AutoBuy"
-    isStarted = true
-end
-
-local function StartPingPongMode()
-    if not myplot then return end
-    local target = myplot:FindFirstChild("AnimalTarget")
-    if not target then return end
-    local pos = target.Position
-    
-    if (pos - Vector3.new(-347, -7, 7)).Magnitude < 20 then
-        purchasePosition = Vector3.new(-411, -7, 112)
-        
-    elseif (pos - Vector3.new(-472, 7, 113)).Magnitude < 20 then
-        purchasePosition = Vector3.new(-353, -7, 15)
-        
-    elseif (pos - Vector3.new(-347, -7, 114)).Magnitude < 20 then
-        purchasePosition = Vector3.new(-468, -7, 107)
-    end
-
-    MoveTo(purchasePosition)
-    mode = "PingPong"
-    isStarted = true
-end
-
-PingPongBtn.MouseButton1Click:Connect(function()
-    StatusLabel.Text = "Status: PingPong active"
-    StartPingPongMode()
-end)
-
-BuyBtn.MouseButton1Click:Connect(function()
-    StatusLabel.Text = "Status: Auto Buy active"
-    StartAutoBuyMode()
-end)
-
-StopBtn.MouseButton1Click:Connect(function()
-    isStarted = false
-    mode = "Idle"
-    StatusLabel.Text = "Status: Stopped"
-    StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-end)
-
-DebugToggleBtn.MouseButton1Click:Connect(function()
-    isDebugMode = not isDebugMode
-    
-    if isDebugMode then
-        DebugToggleBtn.Text = "DEBUG MODE: ON"
-        DebugToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 0) 
-    else
-        DebugToggleBtn.Text = "DEBUG MODE: OFF"
-        DebugToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80) 
-    end
-end)
-
--- [LANCEUR]
-StartAutoBuyMode()
-StatusLabel.Text = "Status: Simple Buy active"

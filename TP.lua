@@ -1,74 +1,207 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = workspace:WaitForChild("Debris")
+local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
+local Players = game:GetService("Players")
+local Plots = workspace:WaitForChild("Plots")
 local PathfindingService = game:GetService("PathfindingService")
-local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
-local PromptAddedConnection = nil
-local AnchorConnection = nil 
-local IsStarted = false
-local IsReturning = false 
-local OriginalPosition = nil
+local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
+local RebirthData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Rebirth"))
+local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
+local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
 
-local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
+local localPlayer = Players.LocalPlayer
+local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
+local leaderstats = localPlayer:WaitForChild("leaderstats")
+local playerCash = leaderstats:WaitForChild("Cash")
 
--- 1. Fonction de mouvement intelligente (Pathfinding)
-local function MoveTo(targetPos)
-    if IsReturning then return end
-    IsReturning = true
-    
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2, 
-        AgentHeight = 5, 
-        AgentCanJump = true,
-        WaypointSpacing = 4
-    })
-    
-    local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
-    
-    if success and path.Status == Enum.PathStatus.Success then
-        local waypoints = path:GetWaypoints()
-        for i = 1, #waypoints do
-            if not IsStarted and not OriginalPosition then break end
-            local waypoint = waypoints[i]
-            if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
-            humanoid:MoveTo(waypoint.Position)
-            
-            if rootPart.AssemblyLinearVelocity.Magnitude < 0.2 then
-                humanoid.Jump = true
-            end
+local myplot = nil
+local lastCollectTick = tick()
+local isStarted = false
+local mode = "Idle" -- Modes: "AutoBuy" or "PingPong"
+local purchasePosition = Vector3.new(-413, -7, 208)
+local isDebugMode = false
+local LOG_FILE = "Gemini_Bot_Logs.txt"
 
-            humanoid.MoveToFinished:Wait(0.4)
-            if (rootPart.Position - targetPos).Magnitude < 1.5 then break end
-        end
-    else
-        humanoid:MoveTo(targetPos)
-        humanoid.MoveToFinished:Wait(0.5)
-    end
-    
-    IsReturning = false 
+-- Initialisation du fichier (optionnel : écrase le log précédent au lancement)
+pcall(function()
+    writefile(LOG_FILE, "-- DÉBUT DE SESSION : " .. os.date("%X") .. " --\n")
+end)
+
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local Title = Instance.new("TextLabel")
+local PingPongBtn = Instance.new("TextButton")
+local BuyBtn = Instance.new("TextButton")
+local MinimizeBtn = Instance.new("TextButton")
+local StatusLabel = Instance.new("TextLabel")
+local UIListLayout = Instance.new("UIListLayout")
+local UICorner = Instance.new("UICorner")
+local StopBtn = Instance.new("TextButton")
+local DebugToggleBtn = Instance.new("TextButton")
+
+-- Configuration du ScreenGui
+ScreenGui.Name = "GeminiManager"
+ScreenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+-- Cadre Principal
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
+MainFrame.Size = UDim2.new(0, 200, 0, 380)
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true -- Utile pour la réduction
+
+UICorner.Parent = MainFrame
+
+-- Titre
+Title.Name = "Title"
+Title.Parent = MainFrame
+Title.BackgroundTransparency = 1
+Title.Size = UDim2.new(0.8, 0, 0, 40)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "M4GIX HUB"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 14
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Bouton Réduire (Trait)
+MinimizeBtn.Name = "MinimizeBtn"
+MinimizeBtn.Parent = MainFrame
+MinimizeBtn.BackgroundTransparency = 1
+MinimizeBtn.Position = UDim2.new(0.8, 0, 0, 0)
+MinimizeBtn.Size = UDim2.new(0, 40, 0, 40)
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.Text = "—"
+MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeBtn.TextSize = 20
+
+-- Container pour les boutons (pour la réduction)
+local BtnContainer = Instance.new("Frame")
+BtnContainer.Name = "BtnContainer"
+BtnContainer.Parent = MainFrame
+BtnContainer.BackgroundTransparency = 1
+BtnContainer.Position = UDim2.new(0, 0, 0, 45)
+BtnContainer.Size = UDim2.new(1, 0, 1, -45)
+
+UIListLayout.Parent = BtnContainer
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.Padding = UDim.new(0, 8)
+
+local function StyleButton(btn, color)
+    btn.Size = UDim2.new(0.9, 0, 0, 35)
+    btn.BackgroundColor3 = color
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 13
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = btn
 end
 
--- 2. Parsing et Logique d'achat
+-- Création des Boutons
+PingPongBtn.Parent = BtnContainer
+PingPongBtn.Text = "START PING PONG"
+StyleButton(PingPongBtn, Color3.fromRGB(21, 101, 192))
+
+BuyBtn.Parent = BtnContainer
+BuyBtn.Text = "START SIMPLE BUY"
+StyleButton(BuyBtn, Color3.fromRGB(183, 28, 28))
+
+-- Bouton STOP (Rouge vif)
+StopBtn.Name = "StopBtn"
+StopBtn.Parent = BtnContainer
+StopBtn.Text = "STOP ALL"
+StyleButton(StopBtn, Color3.fromRGB(200, 0, 0))
+
+-- Bouton TOGGLE DEBUG (Type Checkbox)
+DebugToggleBtn.Name = "DebugToggleBtn"
+DebugToggleBtn.Parent = BtnContainer
+DebugToggleBtn.Text = "DEBUG MODE: OFF"
+StyleButton(DebugToggleBtn, Color3.fromRGB(80, 80, 80))
+
+StatusLabel.Parent = BtnContainer
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Size = UDim2.new(1, 0, 0, 25)
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.Text = "Status: Idle"
+StatusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+StatusLabel.TextSize = 12
+
+local WSStatus = Instance.new("Frame")
+local WSCorner = Instance.new("UICorner")
+
+WSStatus.Name = "WSStatus"
+WSStatus.Parent = MainFrame
+WSStatus.Position = UDim2.new(1, -25, 0, 12) -- En haut à droite à côté du titre
+WSStatus.Size = UDim2.new(0, 10, 0, 10)
+WSStatus.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Rouge par défaut
+
+WSCorner.CornerRadius = UDim.new(1, 0)
+WSCorner.Parent = WSStatus
+-- [LOGIQUE]
+
+local isMinimized = false
+MinimizeBtn.MouseButton1Click:Connect(function()
+    if not isMinimized then
+        MainFrame:TweenSize(UDim2.new(0, 200, 0, 40), "Out", "Quart", 0.3, true)
+        BtnContainer.Visible = false
+        MinimizeBtn.Text = "+"
+    else
+        MainFrame:TweenSize(UDim2.new(0, 200, 0, 380), "Out", "Quart", 0.3, true)
+        BtnContainer.Visible = true
+        MinimizeBtn.Text = "—"
+    end
+    isMinimized = not isMinimized
+end)
+
+local function Debug(msg)
+    local timestamp = os.date("[%H:%M:%S]")
+    local formattedMsg = timestamp .. " " .. tostring(msg)
+
+    if isDebugMode then 
+        print(formattedMsg) 
+    end
+
+    local success, err = pcall(function()
+        appendfile(LOG_FILE, formattedMsg .. "\n")
+    end)
+    if not success and isDebugMode then
+        warn("Impossible d'écrire dans le log : " .. tostring(err))
+    end
+end
+
+
 local function ParseGeneration(str)
     local clean = str:gsub("[%$%s/s]", ""):upper()
-    local multipliers = {K = 1e3, M = 1e6, B = 1e9, T = 1e12}
-    local numStr = clean:gsub("[%a]", "")
-    local suffix = clean:gsub("[%d%.]", "")
+    local multiplier = 1
+    local numStr = clean
+    if clean:find("K") then multiplier = 10^3 numStr = clean:gsub("K", "")
+    elseif clean:find("M") then multiplier = 10^6 numStr = clean:gsub("M", "")
+    elseif clean:find("B") then multiplier = 10^9 numStr = clean:gsub("B", "")
+    elseif clean:find("T") then multiplier = 10^12 numStr = clean:gsub("T", "") end
     local val = tonumber(numStr)
-    return val and (val * (multipliers[suffix] or 1)) or 0
+    return val and (val * multiplier) or 0
 end
 
-local function FindOverhead(prompt)
-    if not prompt or not prompt.Parent then return nil end
-    local bestOverhead, minDistance = nil, math.huge
+local function FindOverhead(animalModel)
+    local animalName = animalModel.Name
+    local bestOverhead = nil
+    local minDistance = math.huge
     for _, item in ipairs(Debris:GetChildren()) do
         if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
             local container = item:FindFirstChild("AnimalOverhead")
-            if container then
-                local promptpos = prompt.Parent.WorldCFrame.Position
-                local horizontalPos = Vector3.new(promptpos.X, item.Position.Y, promptpos.Z)
+            local displayNameLabel = container and container:FindFirstChild("DisplayName")
+            if displayNameLabel and displayNameLabel.Text == animalName then
+                local animalPos = animalModel:GetPivot().Position
+                local horizontalPos = Vector3.new(animalPos.X, item.Position.Y, animalPos.Z)
                 local dist = (item.Position - horizontalPos).Magnitude            
                 if dist < minDistance then
                     minDistance = dist
@@ -79,151 +212,266 @@ local function FindOverhead(prompt)
     end
     return (bestOverhead and minDistance < 3) and bestOverhead or nil
 end
-
-local function ShouldBuy(name, mutation, gen, rarity)
-    if rarity == "secret" or rarity == "og" then return true end
-    if ParseGeneration(gen) >= 1000000 then return true end
-    if name:find("block") and not (name:find("mythic") or name:find("god")) then
-        return true
-    end
-    return false
-end
-
-local function InitPurchasePrompt(prompt)
-    if not prompt or not prompt:IsA("ProximityPrompt") or prompt:GetAttribute("IsReady") then return end
-    prompt:SetAttribute("IsReady", true)
-
-    local overhead = FindOverhead(prompt)
-    if overhead then
-        local displayObj = overhead:FindFirstChild("DisplayName")
-        if not displayObj or displayObj.Text == "" then return end
-        local mutationObj = overhead:FindFirstChild("Mutation")
-        local name = displayObj.Text:lower()
-        local mutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text:lower() or "default"
-        local gen = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s"
-        local rarity = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text:lower() or "common"
-        
-        if ShouldBuy(name, mutation, gen, rarity) then
-            prompt.PromptShown:Connect(function()
-                if IsStarted then fireproximityprompt(prompt) end
-            end)
+  
+local function FindPlot(player)
+    for _, plot in ipairs(Plots:GetChildren()) do
+        local label = plot:FindFirstChild("PlotSign") 
+            and plot.PlotSign:FindFirstChild("SurfaceGui")
+            and plot.PlotSign.SurfaceGui:FindFirstChild("Frame") 
+            and plot.PlotSign.SurfaceGui.Frame:FindFirstChild("TextLabel")
+        if label then
+            local t = (label.ContentText or label.Text or "")
+            if t:find(player.DisplayName) and t:find("Base") then
+                return plot
+            end
         end
     end
+    return nil
 end
 
--- 3. Contrôles Start/Stop
-function Start()
-    IsStarted = true
-    PromptAddedConnection = workspace.DescendantAdded:Connect(function(descendant)
-        if descendant:IsA("ProximityPrompt") and descendant.ActionText == "Purchase" then
-            task.wait(0.5)
-            InitPurchasePrompt(descendant)
-        end
-    end)
-    for _, descendant in ipairs(workspace:GetDescendants()) do
-        if descendant:IsA("ProximityPrompt") and descendant.ActionText == "Purchase" then
-            InitPurchasePrompt(descendant)
-        end
-    end
-end
-
-function Stop()
-    if PromptAddedConnection then
-        PromptAddedConnection:Disconnect()
-        PromptAddedConnection = nil
-    end
-    IsStarted = false
-end
-
-function StartAnchor(pos)
-    OriginalPosition = pos or rootPart.Position
-    if AnchorConnection then AnchorConnection:Disconnect() end
-    AnchorConnection = RunService.Heartbeat:Connect(function()
-        if IsReturning or not OriginalPosition then return end
-        if (rootPart.Position - OriginalPosition).Magnitude > 2 then
-            task.spawn(function() MoveTo(OriginalPosition) end)
-        end
-    end)
-end
-
-function StopAnchor()
-    IsReturning = false
-    if AnchorConnection then 
-        AnchorConnection:Disconnect() 
-        AnchorConnection = nil
-    end
-    OriginalPosition = nil
-end
-
--- 4. GUI et Interactivité
-local ScreenGui = Instance.new("ScreenGui", player.PlayerGui)
-ScreenGui.Name = "GeminiControl"
-ScreenGui.ResetOnSpawn = false
-
-local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Name = "MainFrame"
-MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-MainFrame.Position = UDim2.new(0.05, 0, 0.4, 0)
-MainFrame.Size = UDim2.new(0, 150, 0, 100)
-MainFrame.Active = true
-MainFrame.Draggable = true
-
-local UIListLayout = Instance.new("UIListLayout", MainFrame)
-UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-UIListLayout.Padding = UDim.new(0, 10)
-UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-
-local buttons = {} -- Table pour stocker les fonctions de mise à jour des boutons
-
-local function CreateSwitch(name, startFunc, stopFunc)
-    local Button = Instance.new("TextButton", MainFrame)
-    local isOn = false
-
-    Button.Name = name
-    Button.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-    Button.Size = UDim2.new(0, 130, 0, 35)
-    Button.Font = Enum.Font.GothamBold
-    Button.Text = name .. " : OFF"
-    Button.TextColor3 = Color3.new(1, 1, 1)
-    Button.TextSize = 14
-    Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 8)
-
-    local function updateVisuals()
-        Button.BackgroundColor3 = isOn and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-        Button.Text = name .. (isOn and " : ON" or " : OFF")
-    end
-
-    Button.MouseButton1Click:Connect(function()
-        isOn = not isOn
-        updateVisuals()
-        if isOn then startFunc() else stopFunc() end
-    end)
-
-    -- Permet de forcer l'état (utile pour l'auto-start)
-    buttons[name] = {
-        SetState = function(state, optionalArg)
-            isOn = state
-            updateVisuals()
-            if isOn then startFunc(optionalArg) else stopFunc() end
-        end
+local function ParseOverhead(overhead)
+    if not overhead then return nil end
+    local displayObj = overhead:FindFirstChild("DisplayName")
+    if not displayObj or displayObj.Text == "" then return nil end
+    local mutationObj = overhead:FindFirstChild("Mutation")
+    local actualMutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
+    return {
+        DisplayName = displayObj.Text,
+        Mutation    = actualMutation,
+        Generation  = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s",
+        Price       = overhead:FindFirstChild("Price") and overhead.Price.Text or "$0",
+        Rarity      = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
+        Stolen      = overhead:FindFirstChild("Stolen") and overhead.Stolen.Visible or false
     }
 end
 
--- Création des boutons
-CreateSwitch("Auto-Buy", Start, Stop)
-CreateSwitch("Anchor", StartAnchor, StopAnchor)
+local function FindPrompt(animalModel)
+    local lowerName = string.lower(animalModel.Name)
+    if string.find(lowerName, "block") then lowerName = "block" end
+    local bestPrompt = nil
+    local minDistance = math.huge
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
+            Debug(string.format("🧐 [PROMPT]: %s pour %s", obj.ObjectText, animalModel.Name))
+            if string.find(string.lower(obj.ObjectText), lowerName) then
+                local attachment = obj.Parent
+                if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
+                    local animalPos = animalModel:GetPivot().Position
+                    local horizontalPos = Vector3.new(animalPos.X, attachment.WorldCFrame.Position.Y, animalPos.Z)
+                    local dist = (attachment.WorldCFrame.Position - horizontalPos).Magnitude
+                    if dist < minDistance then
+                        Debug(string.format("🧐 [PROMPT]: %s pour %s a %d studs", obj.ObjectText, animalModel.Name, dist))
+                        minDistance = dist
+                        bestPrompt = obj
+                    end
+                end
+            end
+        end
+    end
+    return (bestPrompt and minDistance < 15) and bestPrompt or nil
+end
 
--- 🚀 AUTO-START : Démarrage automatique vers la position cible
-task.spawn(function()
-    task.wait(1) -- Petit délai de sécurité au chargement
-    print("🤖 Auto-Start activé...")
-    
-    if buttons["Auto-Buy"] then
-        buttons["Auto-Buy"].SetState(true)
+local function ParseIncome(infos, config, mutation, traits)
+    local income = 0
+    local incomeString = ""
+    if infos and infos.Generation and infos.Generation ~= "" then
+        incomeString = infos.Generation
+        income = ParseGeneration(incomeString) 
+    else
+        pcall(function() income = CalculGeneration(config.Generation, mutation, traits) end)
+        incomeString = FormatMoney(income)
+    end
+    return income, incomeString
+end
+
+local function MoveTo(targetPos)
+    local path = PathfindingService:CreatePath({AgentRadius = 3, AgentHeight = 6, AgentCanJump = true})
+    local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
+    if success and path.Status == Enum.PathStatus.Success then
+        for _, waypoint in ipairs(path:GetWaypoints()) do
+            if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+            humanoid:MoveTo(waypoint.Position)
+            humanoid.MoveToFinished:Wait() 
+        end
+    else
+        humanoid:MoveTo(targetPos)
+        humanoid.MoveToFinished:Wait()
+    end
+end
+
+local function CollectCash()
+    if not myplot then 
+        Debug("❌ Erreur: myplot est nil") 
+        return 
     end
     
-    if buttons["Anchor"] then
-        -- On lance l'ancre avec ta position spécifique
-        buttons["Anchor"].SetState(true, Vector3.new(-413, -7, 208))
+    local podiums = myplot:FindFirstChild("AnimalPodiums")
+    if not podiums then 
+        Debug("❌ Erreur: AnimalPodiums introuvable dans le plot") 
+        return 
+    end
+
+    local targets = {"1", "5", "6", "10"}
+    Debug("🚀 Début du cycle de récolte...")
+
+    for _, id in ipairs(targets) do
+        local p = podiums:FindFirstChild(id)
+        if p then
+            local hitbox = p:FindFirstChild("Hitbox", true) 
+            if hitbox and hitbox:IsA("BasePart") then
+                Debug("🏃 Déplacement vers le podium " .. id .. " à la position : " .. tostring(hitbox.Position))
+                MoveTo(hitbox.Position) 
+                task.wait(0.7) 
+            else
+                Debug("⚠️ Hitbox introuvable pour le podium " .. id)
+            end
+        else
+            Debug("⚠️ Podium " .. id .. " introuvable")
+        end
+    end
+    
+    Debug("✅ Récolte terminée, retour à la zone d'achat.")
+    MoveTo(purchasePosition)
+end
+
+local function buyConditionValidation(price, name, income, rarity, mutation)
+
+    if (rarity == "Secret" or rarity == "OG" or income > 1000000) and currentCount < totalSlots then
+        Debug("✅ [ACHAT]: Valeur élevée détectée (Secret/OG/1M+)")
+        return true
+    end
+    
+    return false
+end
+
+RenderedAnimals.ChildAdded:Connect(function(animal)
+    if isStarted then
+        task.wait(1.5)
+        --Debug(string.format("🧐 [ADDED]: %s ", animal.Name))
+
+        local shouldBuy = false
+        local lowerName = string.lower(animal.Name)
+
+        if string.find(lowerName, "block") then
+            if not string.find(lowerName, "mythic") and not string.find(lowerName, "god") then
+                Debug("✅ [ACHAT]: Lucky Block détecté")
+                shouldBuy = true
+            end
+        else
+            local overHead = FindOverhead(animal)
+            local infos = ParseOverhead(overHead)
+            -- Securisation si le parsing rate
+            if infos then
+                shouldBuy = buyConditionValidation(ParseGeneration(infos.Price or "$0"), infos.DisplayName or "Unknown", ParseGeneration(infos.Generation or "$0/s"), infos.Rarity or "Common", infos.Mutation or "Default")
+            end
+        end
+        
+        if shouldBuy then
+            lastCollectTick = tick()
+            local prompt = FindPrompt(animal)
+            prompt.PromptShown:Connect(function()
+                fireproximityprompt(prompt)
+            end)
+        end
     end
 end)
+
+-- [Initialisation]
+
+repeat myplot = FindPlot(localPlayer) task.wait(1) until myplot
+Debug("Base détectée : " .. myplot.Name)
+
+
+-- [Boucle de Routine]
+
+task.spawn(function()
+    while true do
+        if isStarted then
+            local now = tick()
+            
+            if mode == "AutoBuy" then
+                local animalCount, _, _ = getPlotSpaceInfo()
+
+                if (now - lastCollectTick) >= 120 then
+                    if animalCount > 0 then
+                        Debug("🌾 [CYCLE]: Début de la récolte périodique...")
+                        CollectCash()
+                    end
+                    lastCollectTick = tick()
+                end
+            end
+
+            local dist = (rootPart.Position - purchasePosition).Magnitude
+            if dist > 5 then
+                local velocity = rootPart.AssemblyLinearVelocity.Magnitude
+                if velocity < 1 then 
+                    Debug("🏠 [RETOUR]: Repositionnement zone d'achat.")
+                    MoveTo(purchasePosition)
+                end
+            end
+        end
+        task.wait(1) 
+    end
+end)
+
+
+local function StartAutoBuyMode()
+    purchasePosition = Vector3.new(-410, -7, 208)
+    MoveTo(purchasePosition)
+    mode = "AutoBuy"
+    isStarted = true
+end
+
+local function StartPingPongMode()
+    if not myplot then return end
+    local target = myplot:FindFirstChild("AnimalTarget")
+    if not target then return end
+    local pos = target.Position
+    
+    if (pos - Vector3.new(-347, -7, 7)).Magnitude < 20 then
+        purchasePosition = Vector3.new(-411, -7, 112)
+        
+    elseif (pos - Vector3.new(-472, 7, 113)).Magnitude < 20 then
+        purchasePosition = Vector3.new(-353, -7, 15)
+        
+    elseif (pos - Vector3.new(-347, -7, 114)).Magnitude < 20 then
+        purchasePosition = Vector3.new(-468, -7, 107)
+    end
+
+    MoveTo(purchasePosition)
+    mode = "PingPong"
+    isStarted = true
+end
+
+PingPongBtn.MouseButton1Click:Connect(function()
+    StatusLabel.Text = "Status: PingPong active"
+    StartPingPongMode()
+end)
+
+BuyBtn.MouseButton1Click:Connect(function()
+    StatusLabel.Text = "Status: Auto Buy active"
+    StartAutoBuyMode()
+end)
+
+StopBtn.MouseButton1Click:Connect(function()
+    isStarted = false
+    mode = "Idle"
+    StatusLabel.Text = "Status: Stopped"
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+end)
+
+DebugToggleBtn.MouseButton1Click:Connect(function()
+    isDebugMode = not isDebugMode
+    
+    if isDebugMode then
+        DebugToggleBtn.Text = "DEBUG MODE: ON"
+        DebugToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 0) 
+    else
+        DebugToggleBtn.Text = "DEBUG MODE: OFF"
+        DebugToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80) 
+    end
+end)
+
+-- [LANCEUR]
+StartAutoBuyMode()
+StatusLabel.Text = "Status: Simple Buy active"

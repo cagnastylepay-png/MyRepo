@@ -5,13 +5,12 @@ local function FindOverhead(prompt)
     local minDistance = math.huge
     for _, item in ipairs(Debris:GetChildren()) do
         if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
-            local container = item:FindFirstChild("AnimalOverhead")
-            local displayNameLabel = container and container:FindFirstChild("DisplayName")
+            local container = item:WaitForChild("AnimalOverhead")
+            local displayNameLabel = container and container:WaitForChild("DisplayName")
             local promptpos = prompt.Parent.WorldCFrame.Position
             local horizontalPos = Vector3.new(promptpos.X, item.Position.Y, promptpos.Z)
             local dist = (item.Position - horizontalPos).Magnitude            
-            pcall(function() animalName = container.DisplayName.Text end)
-            Debug(string.format("🔍 [Scan]: %s trouvé à %.2f studs", animalName, dist))
+            Debug(string.format("🔍 [Scan]: %s trouvé à %.2f studs", displayNameLabel.Text, dist))
             
             if dist < minDistance then
                minDistance = dist
@@ -32,6 +31,7 @@ local function FindOverhead(prompt)
 end
 
 local function InitPurchasePrompt(prompt)
+    task.wait(1) -- Attendre que le prompt soit complètement initialisé
     local overhead = FindOverhead(prompt)
     prompt.MaxActivationDistance = 30
     prompt:GetPropertyChangedSignal("MaxActivationDistance"):Connect(function()

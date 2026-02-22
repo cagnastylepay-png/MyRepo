@@ -15,17 +15,11 @@ local localPlayer = Players.LocalPlayer
 local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
-
-localPlayer.CharacterAdded:Connect(function(newCharacter)
-    character = newCharacter
-    humanoid = newCharacter:WaitForChild("Humanoid")
-    rootPart = newCharacter:WaitForChild("HumanoidRootPart")
-    Debug("🔄 Personnage rafraîchi après respawn.")
-end)
+local leaderstats = localPlayer:WaitForChild("leaderstats")
+local playerCash = leaderstats:WaitForChild("Cash")
 
 local myplot = nil
 local isStarted = false
-local isAnchorStarted = false
 local purchasePosition = Vector3.new(-413, -7, 208)
 local LOG_FILE = "debug_logs.json"
 local LogCache = {}
@@ -125,15 +119,15 @@ local function ParseOverhead(overhead)
     if not overhead then return nil end
     local displayObj = overhead:FindFirstChild("DisplayName")
     if not displayObj or displayObj.Text == "" then return nil end
-    local mutationObj = overhead:FindFirstChild("Mutation")
-    local actualMutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
+    local mutObj = overhead:FindFirstChild("Mutation")
+    local genObj = overhead:FindFirstChild("Generation")
+    local rarObj = overhead:FindFirstChild("Rarity")
+
     return {
         DisplayName = displayObj.Text,
-        Mutation    = actualMutation,
-        Generation  = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s",
-        Price       = overhead:FindFirstChild("Price") and overhead.Price.Text or "$0",
-        Rarity      = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
-        Stolen      = overhead:FindFirstChild("Stolen") and overhead.Stolen.Visible or false
+        Mutation    = (mutObj and mutObj.Visible and mutObj.Text ~= "") and mutObj.Text or "Default",
+        Generation  = (genObj and genObj.Visible and genObj.Text ~= "") and genObj.Text "$0/s",
+        Rarity      = (rarObj and rarObj.Visible and rarObj.Text ~= "") and rarObj.Text "Common",
     }
 end
 
@@ -144,7 +138,7 @@ local function FindPrompt(animalModel)
     local minDistance = math.huge
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
-            Debug(string.format("🧐 [PROMPT]: %s pour %s", obj.ObjectText, animalModel.Name))
+            Debug(string.format("FindPrompt: %s pour %s", obj.ObjectText, animalModel.Name))
             if string.find(string.lower(obj.ObjectText), lowerName) then
                 local attachment = obj.Parent
                 if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
@@ -152,7 +146,7 @@ local function FindPrompt(animalModel)
                     local horizontalPos = Vector3.new(animalPos.X, attachment.WorldCFrame.Position.Y, animalPos.Z)
                     local dist = (attachment.WorldCFrame.Position - horizontalPos).Magnitude
                     if dist < minDistance then
-                        Debug(string.format("🧐 [PROMPT]: %s pour %s a %d studs", obj.ObjectText, animalModel.Name, dist))
+                        Debug(string.format("FindPrompt: %s pour %s a %d studs", obj.ObjectText, animalModel.Name, dist))
                         minDistance = dist
                         bestPrompt = obj
                     end
@@ -191,9 +185,9 @@ local function MoveTo(targetPos)
     end
 end
 
-local function buyConditionValidation(price, name, income, rarity, mutation)
+local function buyConditionValidation(name, income, rarity, mutation)
 
-    if (rarity == "Secret" or rarity == "OG" or income > 1000000) and currentCount < totalSlots then
+    if rarity == "Secret" or rarity == "OG" or income > 1000000 then
         return true
     end
     
@@ -206,21 +200,34 @@ RenderedAnimals.ChildAdded:Connect(function(animal)
 
         local shouldBuy = false
         local lowerName = string.lower(animal.Name)
+        local overHead = FindOverhead(animal)
+        local infos = ParseOverhead(overHead)
+
 
         if string.find(lowerName, "block") then
             if not string.find(lowerName, "mythic") and not string.find(lowerName, "god") then
                 shouldBuy = true
             end
         else
-            local overHead = FindOverhead(animal)
-            local infos = ParseOverhead(overHead)
             -- Securisation si le parsing rate
             if infos then
-                shouldBuy = buyConditionValidation(ParseGeneration(infos.Price or "$0"), infos.DisplayName or "Unknown", ParseGeneration(infos.Generation or "$0/s"), infos.Rarity or "Common", infos.Mutation or "Default")
+                shouldBuy = buyConditionValidation(infos.DisplayName or "Unknown", ParseGeneration(infos.Generation or "$0/s"), infos.Rarity or "Common", infos.Mutation or "Default")
             end
         end
         
         if shouldBuy then
+            pcall(function()
+                if infos then
+                    Debug(string.format("Lucky Block/Animal Spawned: %s : %s %s %s %s", 
+                        animal.Name, 
+                        tostring(infos.DisplayName), 
+                        tostring(infos.Generation), 
+                        tostring(infos.Rarity), 
+                        tostring(infos.Mutation)
+                    ))
+                end
+            end)
+
             local prompt = FindPrompt(animal)
             prompt.PromptShown:Connect(function()
                 fireproximityprompt(prompt)
@@ -232,10 +239,13 @@ end)
 -- [Initialisation]
 
 repeat myplot = FindPlot(localPlayer) task.wait(1) until myplot
-Debug("Base détectée : " .. myplot.Name)
 
 local function SetPosition()
     purchasePosition = rootPart.Position
+    local x = math.floor(purchasePosition.X)
+    local y = math.floor(purchasePosition.Y)
+    local z = math.floor(purchasePosition.Z)
+    Debug(string.format("SetPosition: %d, %d, %d", x, y, z))
 end
 
 local function StartAnchor()
@@ -353,7 +363,10 @@ task.spawn(function()
             if dist > 5 then
                 local velocity = rootPart.AssemblyLinearVelocity.Magnitude
                 if velocity < 1 then 
-                    Debug("🏠 [RETOUR]: Repositionnement zone d'achat.")
+                    local x = math.floor(rootPart.Position.X)
+                    local y = math.floor(rootPart.Position.Y)
+                    local z = math.floor(rootPart.Position.Z)
+                    Debug(string.format("Ejected to : %d, %d, %d", x, y, z))
                     MoveTo(purchasePosition)
                 end
             end

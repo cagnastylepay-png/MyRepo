@@ -5,13 +5,8 @@ local function FindOverhead(prompt)
     
     local bestOverhead = nil
     local minDistance = math.huge
-    local promptPart = prompt.Parent
     
-    -- Sécurité pour récupérer la position
-    local success, promptPos = pcall(function() return promptPart.Position end)
-    if not success then return nil end
-
-    print(string.format("--- 🛰️ Scan autour du prompt: %s ---", promptPart.Name))
+    print(string.format("--- 🛰️ Scan autour du prompt: %s ---", prompt.ObjectText))
 
     for _, item in ipairs(Debris:GetChildren()) do
         -- On vérifie si c'est un overhead potentiel
@@ -22,9 +17,9 @@ local function FindOverhead(prompt)
                 local animalName = displayNameLabel and displayNameLabel.Text or "Inconnu"
                 
                 -- Calcul de la distance (X et Z uniquement pour la précision horizontale)
-                local itemPos = item.Position
-                local dist = (Vector2.new(itemPos.X, itemPos.Z) - Vector2.new(promptPos.X, promptPos.Z)).Magnitude
-                
+                local promptpos = prompt.Parent.WorldCFrame.Position
+                local horizontalPos = Vector3.new(promptpos.X, item.Position.Y, promptpos.Z)
+                local dist = (item.Position - horizontalPos).Magnitude            
                 -- DEBUG PRINT: Affiche chaque overhead trouvé dans Debris
                 print(string.format("   📍 [Candidat]: %s | Distance: %.2f studs", animalName, dist))
                 

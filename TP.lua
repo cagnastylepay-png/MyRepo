@@ -22,8 +22,6 @@ local function FindOverhead(prompt)
     local bestOverhead = nil
     local minDistance = math.huge
     
-    print(string.format("--- 🛰️ Scan autour du prompt: %s ---", prompt.ObjectText))
-
     for _, item in ipairs(Debris:GetChildren()) do
         -- On vérifie si c'est un overhead potentiel
         if item.Name == "FastOverheadTemplate" and item:IsA("BasePart") then
@@ -45,7 +43,7 @@ end
 
 -- 3. Logique de décision d'achat
 local function ShouldBuy(name, mutation, gen, rarity)
-    print(string.format("%s %s ➜ %s %s", mutation, name, rarity, gen))
+    print(string.format("%s %s %s %s", mutation, name, rarity, gen))
     -- Priorité : Raretés spéciales
     if rarity == "secret" or rarity == "og" then return true end
     
@@ -68,15 +66,6 @@ local function InitPurchasePrompt(prompt)
     prompt:SetAttribute("IsReady", true)
 
     local overhead = FindOverhead(prompt)
-    
-    prompt.MaxActivationDistance = 30
-    
-    -- Garder la distance à 30 quoi qu'il arrive
-    prompt:GetPropertyChangedSignal("MaxActivationDistance"):Connect(function()
-        if prompt.MaxActivationDistance ~= 30 then
-            prompt.MaxActivationDistance = 30
-        end
-    end)
 
     if overhead then
         local displayObj = overhead:FindFirstChild("DisplayName")
@@ -103,9 +92,3 @@ workspace.DescendantAdded:Connect(function(descendant)
         InitPurchasePrompt(descendant)
     end
 end)
-
-for _, descendant in ipairs(workspace:GetDescendants()) do
-    if descendant:IsA("ProximityPrompt") and descendant.ActionText == "Purchase" then
-        task.spawn(InitPurchasePrompt, descendant)
-    end
-end

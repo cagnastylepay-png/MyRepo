@@ -10,7 +10,7 @@ local function FindOverhead(prompt)
             local promptpos = prompt.Parent.WorldCFrame.Position
             local horizontalPos = Vector3.new(promptpos.X, item.Position.Y, promptpos.Z)
             local dist = (item.Position - horizontalPos).Magnitude            
-            Debug(string.format("🔍 [Scan]: %s trouvé à %.2f studs", displayNameLabel.Text, dist))
+            log(string.format("🔍 [Scan]: %s trouvé à %.2f studs", displayNameLabel.Text, dist))
             
             if dist < minDistance then
                minDistance = dist
@@ -20,35 +20,47 @@ local function FindOverhead(prompt)
     end
     if bestOverhead then
         if minDistance < 3 then
-            Debug(string.format("✅ [Succès]: Overhead lié (Distance: %.2f studs)", minDistance))
+            log(string.format("✅ [Succès]: Overhead lié (Distance: %.2f studs)", minDistance))
         else
-            Debug(string.format("❌ [Refusé]: Trop loin (%.2f studs). Seuil requis: < 3", minDistance))
+            log(string.format("❌ [Refusé]: Trop loin (%.2f studs). Seuil requis: < 3", minDistance))
         end
     else
-        Debug("❌ [Echec]: Aucun Overhead 'FastOverheadTemplate' trouvé à proximité.")
+        log("❌ [Echec]: Aucun Overhead 'FastOverheadTemplate' trouvé à proximité.")
     end
     return (bestOverhead and minDistance < 3) and bestOverhead or nil
 end
 
 local function InitPurchasePrompt(prompt)
-    task.wait(1) -- Attendre que le prompt soit complètement initialisé
+    log("🆕 [Prompt]: Init d'un prompt d'achat")
+    
     local overhead = FindOverhead(prompt)
+    
     prompt.MaxActivationDistance = 30
     prompt:GetPropertyChangedSignal("MaxActivationDistance"):Connect(function()
         if prompt.MaxActivationDistance ~= 30 then
             prompt.MaxActivationDistance = 30
         end
     end)
-end
 
-for _, descendant in ipairs(workspace:GetDescendants()) do
-    if descendant:IsA("ProximityPrompt") and descendant.ActionText == "Purchase" then
-        InitPurchasePrompt(descendant)
+    if overhead then
+        log("✨ [Link]: Connecté à l'overhead.")
+        -- Ici tu peux ajouter ta logique : ParseOverhead(overhead) etc.
     end
 end
 
+-- 3. Les connexions et boucles à la fin
 workspace.DescendantAdded:Connect(function(descendant)
     if descendant:IsA("ProximityPrompt") and descendant.ActionText == "Purchase" then
+        task.wait(0.2)
         InitPurchasePrompt(descendant)
     end
 end)
+
+-- Boucle de départ (on utilise task.spawn pour ne pas bloquer le script)
+for _, descendant in ipairs(workspace:GetDescendants()) do
+    if descendant:IsA("ProximityPrompt") and descendant.ActionText == "Purchase" then
+        task.spawn(function()
+            InitPurchasePrompt(descendant)
+        end)
+    end
+end

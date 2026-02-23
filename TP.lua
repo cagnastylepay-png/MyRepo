@@ -119,15 +119,13 @@ local function ParseOverhead(overhead)
     if not overhead then return nil end
     local displayObj = overhead:FindFirstChild("DisplayName")
     if not displayObj or displayObj.Text == "" then return nil end
-    local mutObj = overhead:FindFirstChild("Mutation")
-    local genObj = overhead:FindFirstChild("Generation")
-    local rarObj = overhead:FindFirstChild("Rarity")
-
+    local mutationObj = overhead:FindFirstChild("Mutation")
+    local actualMutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
     return {
         DisplayName = displayObj.Text,
-        Mutation    = (mutObj and mutObj.Visible and mutObj.Text ~= "") and mutObj.Text or "Default",
-        Generation  = (genObj and genObj.Visible and genObj.Text ~= "") and genObj.Text "$0/s",
-        Rarity      = (rarObj and rarObj.Visible and rarObj.Text ~= "") and rarObj.Text "Common",
+        Mutation    = actualMutation,
+        Generation  = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s",
+        Rarity      = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common"
     }
 end
 
@@ -171,7 +169,7 @@ local function ParseIncome(infos, config, mutation, traits)
 end
 
 local function MoveTo(targetPos)
-    local path = PathfindingService:CreatePath({AgentRadius = 4, AgentHeight = 6, AgentCanJump = true})
+    local path = PathfindingService:CreatePath({AgentRadius = 3, AgentHeight = 6, AgentCanJump = true})
     local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
     if success and path.Status == Enum.PathStatus.Success then
         for _, waypoint in ipairs(path:GetWaypoints()) do
@@ -360,7 +358,7 @@ task.spawn(function()
     while true do
         if isAnchorStarted then
             local dist = (rootPart.Position - purchasePosition).Magnitude
-            if dist > 3 then
+            if dist > 5 then
                 local velocity = rootPart.AssemblyLinearVelocity.Magnitude
                 if velocity < 1 then 
                     local x = math.floor(rootPart.Position.X)

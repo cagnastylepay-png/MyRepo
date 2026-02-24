@@ -19,12 +19,8 @@ local leaderstats = localPlayer:WaitForChild("leaderstats")
 local playerCash = leaderstats:WaitForChild("Cash")
 
 local myplot = nil
-local lastCollectTick = tick()
 local isStarted = false
-local mode = "Idle" -- Modes: "AutoBuy" or "PingPong"
 local purchasePosition = Vector3.new(-413, -7, 208)
-local server = nil
-local reconnectDelay = 5
 local isDebugMode = false
 local LOG_FILE = "Gemini_Bot_Logs.txt"
 
@@ -36,7 +32,6 @@ end)
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
 local Title = Instance.new("TextLabel")
-local PingPongBtn = Instance.new("TextButton")
 local BuyBtn = Instance.new("TextButton")
 local MinimizeBtn = Instance.new("TextButton")
 local StatusLabel = Instance.new("TextLabel")
@@ -108,11 +103,6 @@ local function StyleButton(btn, color)
     corner.Parent = btn
 end
 
--- Création des Boutons
-PingPongBtn.Parent = BtnContainer
-PingPongBtn.Text = "START PING PONG"
-StyleButton(PingPongBtn, Color3.fromRGB(21, 101, 192))
-
 BuyBtn.Parent = BtnContainer
 BuyBtn.Text = "START SIMPLE BUY"
 StyleButton(BuyBtn, Color3.fromRGB(183, 28, 28))
@@ -137,17 +127,6 @@ StatusLabel.Text = "Status: Idle"
 StatusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 StatusLabel.TextSize = 12
 
-local WSStatus = Instance.new("Frame")
-local WSCorner = Instance.new("UICorner")
-
-WSStatus.Name = "WSStatus"
-WSStatus.Parent = MainFrame
-WSStatus.Position = UDim2.new(1, -25, 0, 12) -- En haut à droite à côté du titre
-WSStatus.Size = UDim2.new(0, 10, 0, 10)
-WSStatus.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Rouge par défaut
-
-WSCorner.CornerRadius = UDim.new(1, 0)
-WSCorner.Parent = WSStatus
 -- [LOGIQUE]
 
 local isMinimized = false
@@ -301,41 +280,6 @@ local function MoveTo(targetPos)
     end
 end
 
-local function CollectCash()
-    if not myplot then 
-        Debug("❌ Erreur: myplot est nil") 
-        return 
-    end
-    
-    local podiums = myplot:FindFirstChild("AnimalPodiums")
-    if not podiums then 
-        Debug("❌ Erreur: AnimalPodiums introuvable dans le plot") 
-        return 
-    end
-
-    local targets = {"1", "5", "6", "10"}
-    Debug("🚀 Début du cycle de récolte...")
-
-    for _, id in ipairs(targets) do
-        local p = podiums:FindFirstChild(id)
-        if p then
-            local hitbox = p:FindFirstChild("Hitbox", true) 
-            if hitbox and hitbox:IsA("BasePart") then
-                Debug("🏃 Déplacement vers le podium " .. id .. " à la position : " .. tostring(hitbox.Position))
-                MoveTo(hitbox.Position) 
-                task.wait(0.7) 
-            else
-                Debug("⚠️ Hitbox introuvable pour le podium " .. id)
-            end
-        else
-            Debug("⚠️ Podium " .. id .. " introuvable")
-        end
-    end
-    
-    Debug("✅ Récolte terminée, retour à la zone d'achat.")
-    MoveTo(purchasePosition)
-end
-
 local function buyConditionValidation(price, name, income, rarity, mutation)
 
     if (rarity == "Secret" or rarity == "OG" or income > 1000000) and currentCount < totalSlots then
@@ -369,7 +313,6 @@ RenderedAnimals.ChildAdded:Connect(function(animal)
         end
         
         if shouldBuy then
-            lastCollectTick = tick()
             local prompt = FindPrompt(animal)
             prompt.PromptShown:Connect(function()
                 fireproximityprompt(prompt)
@@ -389,60 +332,24 @@ Debug("Base détectée : " .. myplot.Name)
 task.spawn(function()
     while true do
         if isStarted then
-            local now = tick()
-            
-            if mode == "AutoBuy" then
-                local animalCount, _, _ = getPlotSpaceInfo()
-
-                if (now - lastCollectTick) >= 120 then
-                    if animalCount > 0 then
-                        Debug("🌾 [CYCLE]: Début de la récolte périodique...")
-                        CollectCash()
-                    end
-                    lastCollectTick = tick()
-                end
-            end
-
             local dist = (rootPart.Position - purchasePosition).Magnitude
             if dist > 3 then
-                local velocity = rootPart.AssemblyLinearVelocity.Magnitude
-                if velocity < 1 then 
-                    Debug("🏠 [RETOUR]: Repositionnement zone d'achat.")
-                    MoveTo(purchasePosition)
-                end
+                MoveTo(purchasePosition)
             end
         end
-        task.wait(1) 
+        task.wait(0.5) 
     end
 end)
 
 
-local function StartAutoBuyMode()
-    purchasePosition = Vector3.new(-410, -7, 208)
-    MoveTo(purchasePosition)
-    mode = "AutoBuy"
-    isStarted = true
-end
-
-local function StartPingPongMode()
-    purchasePosition = rootPart.Position
-    mode = "PingPong"
-    isStarted = true
-end
-
-PingPongBtn.MouseButton1Click:Connect(function()
-    StatusLabel.Text = "Status: PingPong active"
-    StartPingPongMode()
-end)
-
 BuyBtn.MouseButton1Click:Connect(function()
+    purchasePosition = rootPart.Position
     StatusLabel.Text = "Status: Auto Buy active"
-    StartAutoBuyMode()
+    isStarted = true
 end)
 
 StopBtn.MouseButton1Click:Connect(function()
     isStarted = false
-    mode = "Idle"
     StatusLabel.Text = "Status: Stopped"
     StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
 end)
@@ -460,5 +367,6 @@ DebugToggleBtn.MouseButton1Click:Connect(function()
 end)
 
 -- [LANCEUR]
-StartAutoBuyMode()
-StatusLabel.Text = "Status: Simple Buy active"
+MoveTo(purchasePosition)
+StatusLabel.Text = "Status: Auto Buy active"
+isStarted = true

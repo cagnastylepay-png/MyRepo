@@ -266,18 +266,34 @@ local function ParseIncome(infos, config, mutation, traits)
 end
 
 local function MoveTo(targetPos)
+    if isMoving then return end 
+    isMoving = true
+    
     local path = PathfindingService:CreatePath({AgentRadius = 3, AgentHeight = 6, AgentCanJump = true})
     local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
+    
     if success and path.Status == Enum.PathStatus.Success then
-        for _, waypoint in ipairs(path:GetWaypoints()) do
+        local waypoints = path:GetWaypoints()
+        for i, waypoint in ipairs(waypoints) do
+            if not isStarted then break end 
+            
             if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
             humanoid:MoveTo(waypoint.Position)
-            humanoid.MoveToFinished:Wait() 
+            
+            -- Sécurité : Si après 1.5 seconde on n'est pas au waypoint, on annule pour recalculer
+            local arrived = humanoid.MoveToFinished:Wait(1.5) 
+            if not arrived then 
+                Debug("⚠️ Coincé ou trop lent, recalcul du chemin...")
+                break 
+            end
         end
     else
+        -- Si le pathfinding galère, on force une ligne droite
         humanoid:MoveTo(targetPos)
-        humanoid.MoveToFinished:Wait()
+        humanoid.MoveToFinished:Wait(2)
     end
+    
+    isMoving = false
 end
 
 local function buyConditionValidation(price, name, income, rarity, mutation)
@@ -331,16 +347,16 @@ Debug("Base détectée : " .. myplot.Name)
 
 task.spawn(function()
     while true do
-        if isStarted then
+        if isStarted and not isMoving then
             local dist = (rootPart.Position - purchasePosition).Magnitude
-            if dist > 3 then
-                MoveTo(purchasePosition)
+            if dist > 4 then -- Si on est à plus de 6 studs du point de garde
+                Debug("🔄 Retour au point de garde via Pathfinding...")
+                task.spawn(MoveTo, purchasePosition) -- On lance le mouvement sans bloquer
             end
         end
-        task.wait(0.5) 
+        task.wait(1) -- Vérification chaque seconde
     end
 end)
-
 
 BuyBtn.MouseButton1Click:Connect(function()
     purchasePosition = rootPart.Position

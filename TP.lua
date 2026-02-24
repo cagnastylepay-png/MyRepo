@@ -298,7 +298,7 @@ end
 
 local function buyConditionValidation(price, name, income, rarity, mutation)
 
-    if (rarity == "Secret" or rarity == "OG" or income > 1000000) and currentCount < totalSlots then
+    if rarity == "Secret" or rarity == "OG" or income > 1000000 then
         Debug("✅ [ACHAT]: Valeur élevée détectée (Secret/OG/1M+)")
         return true
     end

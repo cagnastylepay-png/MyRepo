@@ -1,44 +1,25 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = workspace:WaitForChild("Debris")
 local RenderedAnimals = workspace:WaitForChild("RenderedMovingAnimals")
 local Players = game:GetService("Players")
-local Plots = workspace:WaitForChild("Plots")
 local PathfindingService = game:GetService("PathfindingService")
-local HttpService = game:GetService("HttpService")
-
-local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
-local RebirthData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Rebirth"))
-local TraitsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Traits"))
-local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Mutations"))
 
 local localPlayer = Players.LocalPlayer
 local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
-local leaderstats = localPlayer:WaitForChild("leaderstats")
-local playerCash = leaderstats:WaitForChild("Cash")
 
-local myplot = nil
 local isStarted = false
 local purchasePosition = Vector3.new(-413, -7, 208)
-local isDebugMode = false
-local LOG_FILE = "Gemini_Bot_Logs.txt"
-
--- Initialisation du fichier (optionnel : écrase le log précédent au lancement)
-pcall(function()
-    writefile(LOG_FILE, "-- DÉBUT DE SESSION : " .. os.date("%X") .. " --\n")
-end)
+local isMoving = false
 
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
 local Title = Instance.new("TextLabel")
 local BuyBtn = Instance.new("TextButton")
 local MinimizeBtn = Instance.new("TextButton")
-local StatusLabel = Instance.new("TextLabel")
 local UIListLayout = Instance.new("UIListLayout")
 local UICorner = Instance.new("UICorner")
 local StopBtn = Instance.new("TextButton")
-local DebugToggleBtn = Instance.new("TextButton")
 
 -- Configuration du ScreenGui
 ScreenGui.Name = "GeminiManager"
@@ -113,19 +94,6 @@ StopBtn.Parent = BtnContainer
 StopBtn.Text = "STOP ALL"
 StyleButton(StopBtn, Color3.fromRGB(200, 0, 0))
 
--- Bouton TOGGLE DEBUG (Type Checkbox)
-DebugToggleBtn.Name = "DebugToggleBtn"
-DebugToggleBtn.Parent = BtnContainer
-DebugToggleBtn.Text = "DEBUG MODE: OFF"
-StyleButton(DebugToggleBtn, Color3.fromRGB(80, 80, 80))
-
-StatusLabel.Parent = BtnContainer
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Size = UDim2.new(1, 0, 0, 25)
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.Text = "Status: Idle"
-StatusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-StatusLabel.TextSize = 12
 
 -- [LOGIQUE]
 
@@ -142,22 +110,6 @@ MinimizeBtn.MouseButton1Click:Connect(function()
     end
     isMinimized = not isMinimized
 end)
-
-local function Debug(msg)
-    local timestamp = os.date("[%H:%M:%S]")
-    local formattedMsg = timestamp .. " " .. tostring(msg)
-
-    if isDebugMode then 
-        print(formattedMsg) 
-    end
-
-    local success, err = pcall(function()
-        appendfile(LOG_FILE, formattedMsg .. "\n")
-    end)
-    if not success and isDebugMode then
-        warn("Impossible d'écrire dans le log : " .. tostring(err))
-    end
-end
 
 
 local function ParseGeneration(str)
@@ -194,38 +146,6 @@ local function FindOverhead(animalModel)
     return (bestOverhead and minDistance < 3) and bestOverhead or nil
 end
   
-local function FindPlot(player)
-    for _, plot in ipairs(Plots:GetChildren()) do
-        local label = plot:FindFirstChild("PlotSign") 
-            and plot.PlotSign:FindFirstChild("SurfaceGui")
-            and plot.PlotSign.SurfaceGui:FindFirstChild("Frame") 
-            and plot.PlotSign.SurfaceGui.Frame:FindFirstChild("TextLabel")
-        if label then
-            local t = (label.ContentText or label.Text or "")
-            if t:find(player.DisplayName) and t:find("Base") then
-                return plot
-            end
-        end
-    end
-    return nil
-end
-
-local function ParseOverhead(overhead)
-    if not overhead then return nil end
-    local displayObj = overhead:FindFirstChild("DisplayName")
-    if not displayObj or displayObj.Text == "" then return nil end
-    local mutationObj = overhead:FindFirstChild("Mutation")
-    local actualMutation = (mutationObj and mutationObj.Visible and mutationObj.Text ~= "") and mutationObj.Text or "Default"
-    return {
-        DisplayName = displayObj.Text,
-        Mutation    = actualMutation,
-        Generation  = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s",
-        Price       = overhead:FindFirstChild("Price") and overhead.Price.Text or "$0",
-        Rarity      = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common",
-        Stolen      = overhead:FindFirstChild("Stolen") and overhead.Stolen.Visible or false
-    }
-end
-
 local function FindPrompt(animalModel)
     local lowerName = string.lower(animalModel.Name)
     if string.find(lowerName, "block") then lowerName = "block" end
@@ -233,7 +153,6 @@ local function FindPrompt(animalModel)
     local minDistance = math.huge
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.ActionText == "Purchase" then
-            Debug(string.format("🧐 [PROMPT]: %s pour %s", obj.ObjectText, animalModel.Name))
             if string.find(string.lower(obj.ObjectText), lowerName) then
                 local attachment = obj.Parent
                 if attachment:IsA("Attachment") and attachment.Name == "PromptAttachment" then
@@ -241,7 +160,6 @@ local function FindPrompt(animalModel)
                     local horizontalPos = Vector3.new(animalPos.X, attachment.WorldCFrame.Position.Y, animalPos.Z)
                     local dist = (attachment.WorldCFrame.Position - horizontalPos).Magnitude
                     if dist < minDistance then
-                        Debug(string.format("🧐 [PROMPT]: %s pour %s a %d studs", obj.ObjectText, animalModel.Name, dist))
                         minDistance = dist
                         bestPrompt = obj
                     end
@@ -250,19 +168,6 @@ local function FindPrompt(animalModel)
         end
     end
     return (bestPrompt and minDistance < 15) and bestPrompt or nil
-end
-
-local function ParseIncome(infos, config, mutation, traits)
-    local income = 0
-    local incomeString = ""
-    if infos and infos.Generation and infos.Generation ~= "" then
-        incomeString = infos.Generation
-        income = ParseGeneration(incomeString) 
-    else
-        pcall(function() income = CalculGeneration(config.Generation, mutation, traits) end)
-        incomeString = FormatMoney(income)
-    end
-    return income, incomeString
 end
 
 local function MoveTo(targetPos)
@@ -283,7 +188,6 @@ local function MoveTo(targetPos)
             -- Sécurité : Si après 1.5 seconde on n'est pas au waypoint, on annule pour recalculer
             local arrived = humanoid.MoveToFinished:Wait(1.5) 
             if not arrived then 
-                Debug("⚠️ Coincé ou trop lent, recalcul du chemin...")
                 break 
             end
         end
@@ -296,10 +200,11 @@ local function MoveTo(targetPos)
     isMoving = false
 end
 
-local function buyConditionValidation(price, name, income, rarity, mutation)
+local function buyConditionValidation(infos)
 
-    if rarity == "Secret" or rarity == "OG" or income > 1000000 then
-        Debug("✅ [ACHAT]: Valeur élevée détectée (Secret/OG/1M+)")
+    if infos.IsLuckyBlock then
+        return infos.Rarity == "Other"
+    elseif infos.Rarity == "Secret" or infos.Rarity == "OG" or ParseGeneration(infos.Generation or "$0/s") > 1000000 then
         return true
     end
     
@@ -307,40 +212,37 @@ local function buyConditionValidation(price, name, income, rarity, mutation)
 end
 
 RenderedAnimals.ChildAdded:Connect(function(animal)
-    if isStarted then
-        task.wait(1.5)
-        --Debug(string.format("🧐 [ADDED]: %s ", animal.Name))
+    task.wait(1.5)
 
-        local shouldBuy = false
-        local lowerName = string.lower(animal.Name)
+    local lowerName = string.lower(animal.Name)
+    local overhead = FindOverhead(animal)
+    local infos = {
+        IsLuckyBlock = false,
+        DisplayName = animal.Name,
+        Generation  = "$0/s",
+        Rarity      = "Other",
+    }
 
-        if string.find(lowerName, "block") then
-            if not string.find(lowerName, "mythic") and not string.find(lowerName, "god") then
-                Debug("✅ [ACHAT]: Lucky Block détecté")
-                shouldBuy = true
-            end
-        else
-            local overHead = FindOverhead(animal)
-            local infos = ParseOverhead(overHead)
-            -- Securisation si le parsing rate
-            if infos then
-                shouldBuy = buyConditionValidation(ParseGeneration(infos.Price or "$0"), infos.DisplayName or "Unknown", ParseGeneration(infos.Generation or "$0/s"), infos.Rarity or "Common", infos.Mutation or "Default")
-            end
-        end
-        
-        if shouldBuy then
-            local prompt = FindPrompt(animal)
-            prompt.PromptShown:Connect(function()
-                fireproximityprompt(prompt)
-            end)
+    if string.find(lowerName, "block") then
+        infos.IsLuckyBlock = true
+        if string.find(lowerName, "mythic") then infos.Rarity = "Mythic" end
+        if string.find(lowerName, "god") then infos.Rarity = "Brainrot God" end
+    else
+        local displayObj = overhead:FindFirstChild("DisplayName")
+        if displayObj and displayObj.Text ~= "" then
+            infos.DisplayName = displayObj.Text
+            infos.Generation  = overhead:FindFirstChild("Generation") and overhead.Generation.Text or "$0/s"
+            infos.Rarity      = overhead:FindFirstChild("Rarity") and overhead.Rarity.Text or "Common"
         end
     end
+        
+    local prompt = FindPrompt(animal)
+    prompt.PromptShown:Connect(function()
+        if isStarted and buyConditionValidation(infos) then
+            fireproximityprompt(prompt)
+        end
+    end)
 end)
-
--- [Initialisation]
-
-repeat myplot = FindPlot(localPlayer) task.wait(1) until myplot
-Debug("Base détectée : " .. myplot.Name)
 
 
 -- [Boucle de Routine]
@@ -349,8 +251,7 @@ task.spawn(function()
     while true do
         if isStarted and not isMoving then
             local dist = (rootPart.Position - purchasePosition).Magnitude
-            if dist > 4 then -- Si on est à plus de 6 studs du point de garde
-                Debug("🔄 Retour au point de garde via Pathfinding...")
+            if dist > 4 then -- Si on est à plus de 4 studs du point de garde
                 task.spawn(MoveTo, purchasePosition) -- On lance le mouvement sans bloquer
             end
         end
@@ -360,29 +261,14 @@ end)
 
 BuyBtn.MouseButton1Click:Connect(function()
     purchasePosition = rootPart.Position
-    StatusLabel.Text = "Status: Auto Buy active"
     isStarted = true
 end)
 
 StopBtn.MouseButton1Click:Connect(function()
     isStarted = false
-    StatusLabel.Text = "Status: Stopped"
-    StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
 end)
 
-DebugToggleBtn.MouseButton1Click:Connect(function()
-    isDebugMode = not isDebugMode
-    
-    if isDebugMode then
-        DebugToggleBtn.Text = "DEBUG MODE: ON"
-        DebugToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 0) 
-    else
-        DebugToggleBtn.Text = "DEBUG MODE: OFF"
-        DebugToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80) 
-    end
-end)
 
 -- [LANCEUR]
 MoveTo(purchasePosition)
-StatusLabel.Text = "Status: Auto Buy active"
 isStarted = true

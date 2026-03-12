@@ -4,7 +4,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = workspace:WaitForChild("Debris")
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
-local PathfindingService = game:GetService("PathfindingService")
 
 -- Chargement des modules de données
 local AnimalsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChild("Animals"))
@@ -13,154 +12,6 @@ local MutationsData = require(ReplicatedStorage:WaitForChild("Datas"):WaitForChi
 
 local server = nil
 local reconnectDelay = 5
-local Player = Players.LocalPlayer
-local Character = Player.Character or Player.CharacterAdded:Wait()
-local rootPart = Character:WaitForChild("HumanoidRootPart")
-local humanoid = Character:WaitForChild("Humanoid")
-local IsTrading = false
-local guiStatus = nil
-
-local function MoveTo(targetPos)
-    local path = PathfindingService:CreatePath({AgentRadius = 3, AgentHeight = 6, AgentCanJump = true})
-    local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
-    
-    if success and path.Status == Enum.PathStatus.Success then
-        local waypoints = path:GetWaypoints()
-        for i, waypoint in ipairs(waypoints) do
-            if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
-            humanoid:MoveTo(waypoint.Position)
-            local arrived = humanoid.MoveToFinished:Wait(1.5) 
-            if not arrived then break end
-        end
-    else
-        humanoid:MoveTo(targetPos)
-        humanoid.MoveToFinished:Wait(2)
-    end
-end
-
--- Fonction principale d'envoi et de trade
-local function SendTrade(username)
-    if IsTrading then return end
-    IsTrading = true
-
-    local PlayerGui = Player:WaitForChild("PlayerGui")
-    local tradeUI = PlayerGui:FindFirstChild("TradePlayerList")
-    local mainFrame = tradeUI and tradeUI:FindFirstChild("TradePlayerList")
-    local machine = workspace:FindFirstChild("TradeMachine")
-
-    -- 1. OUVERTURE DE LA MACHINE
-    if not mainFrame or not mainFrame.Visible then
-        if machine and machine:FindFirstChild("Prompt") then
-            local prompt = machine.Prompt:FindFirstChild("ProximityPrompt")
-            if prompt then
-                MoveTo(machine.Prompt.Position)
-                task.wait(1)
-                fireproximityprompt(prompt)
-                
-                local timeout = 0
-                while (not mainFrame or not mainFrame.Visible) and timeout < 5 do
-                    task.wait(0.5)
-                    timeout = timeout + 0.5
-                end
-            end
-        end
-    end
-
-    task.wait(1)
-
-    -- 2. RECHERCHE DU JOUEUR (Optimisée)
-    local bg = mainFrame:FindFirstChild("bg")
-    local searchFrame = bg and bg:FindFirstChild("SearchFrame")
-    local searchBox = searchFrame and searchFrame:FindFirstChild("SearchBox")
-
-    if not searchFrame or not searchFrame.Visible then
-        local btns = mainFrame:FindFirstChild("Btns")
-        local searchBtn = btns and btns:FindFirstChild("Search")
-        if searchBtn then
-            firesignal(searchBtn.Activated)
-            task.wait(1)
-        end
-    end
-
-    if searchBox then
-        searchBox:CaptureFocus()
-        task.wait(1)
-        searchBox.Text = username
-        task.wait(1)
-        searchBox:ReleaseFocus(true) 
-    end
-    
-    task.wait(3) -- Attente du filtrage serveur
-    
-    -- 3. CLIC SUR LE BOUTON SEND DANS LA LISTE
-    local globalList = mainFrame:FindFirstChild("Global") and mainFrame.Global:FindFirstChild("List")
-    local requestSent = false
-
-    if globalList then
-        for _, item in ipairs(globalList:GetChildren()) do
-            local fill = item:FindFirstChild("Fill")
-            if fill and fill:FindFirstChild("Username") and fill.Username.Text:find(username) then
-                if fill.Status2.Text == "Online" then
-                    local sendBtn = fill:FindFirstChild("Send")
-                    if sendBtn and sendBtn.Txt.Text == "SEND" then
-                        print("Invitation envoyée à " .. username)
-                        firesignal(sendBtn.Activated)
-                        requestSent = true
-                        break
-                    end
-                end
-            end
-        end
-    end
-
-    if not requestSent then
-        warn("Joueur introuvable ou indisponible.")
-        IsTrading = false
-        return
-    end
-
-    -- 4. ATTENTE DE L'ACCEPTATION (LIVE TRADE)
-    local tradeLiveUI = PlayerGui:WaitForChild("TradeLiveTrade", 10)
-    local tradeFrame = tradeLiveUI and tradeLiveUI:FindFirstChild("TradeLiveTrade")
-
-    local t = 0
-    while (not tradeFrame or not tradeFrame.Visible) and t < 10 do
-        task.wait(0.5)
-        t = t + 0.5
-    end
-
-    if not tradeFrame or not tradeFrame.Visible then
-        warn("Trade expiré (pas d'acceptation).")
-        IsTrading = false
-        return
-    end
-
-    -- 5. BOUCLE READY / ACCEPT (Basée sur la couleur != Gris)
-    print("Trade en cours...")
-    while tradeFrame and tradeFrame.Visible do
-        local other = tradeFrame:FindFirstChild("Other")
-        local readyBtn = other and other:FindFirstChild("ReadyButton")
-
-        if readyBtn then
-            local color = readyBtn.BackgroundColor3
-            local r = math.floor(color.R * 255)
-            local g = math.floor(color.G * 255)
-            local b = math.floor(color.B * 255)
-
-            -- Si la couleur n'est plus le gris (112, 112, 112)
-            if r ~= 112 or g ~= 112 or b ~= 112 then
-                print("Action détectée (Bouton n'est plus gris) ! Clic...")
-                firesignal(readyBtn.Activated)
-                task.wait(2) 
-            end
-        end
-        task.wait(0.5)
-    end
-
-    -- 6. RESET
-    print("Processus terminé.")
-    IsTrading = false
-end
 
 -- [SYSTÈME DE COMMUNICATION]
 local function SendToServer(method, data)
@@ -320,37 +171,7 @@ end
 
 -- [COMMANDES DISTANTES]
 local function OnServerMessage(rawMsg)
-    local success, payload = pcall(function() return HttpService:JSONDecode(rawMsg) end)
-    
-    if success and payload then
-        -- Gestion de l'ordre de Trade
-        if payload.Type == "TradeRequest" then
-            local targetUser = payload.TargetUser
-            
-            if targetUser then
-                print("🚨 Ordre reçu : Tradder avec " .. targetUser)
-                
-                -- Mise à jour visuelle du GUI
-                if guiStatus then
-                    guiStatus.Text = "TRADING: " .. targetUser
-                    guiStatus.TextColor3 = Color3.fromRGB(255, 170, 0) -- Orange
-                end
-                
-                -- Lancement de la routine de trade
-                task.spawn(function()
-                    SendTrade(targetUser)
-                    
-                    -- Une fois fini, on remet le statut
-                    if guiStatus then
-                        guiStatus.Text = server and "CONNECTED" or "DISCONNECTED"
-                        guiStatus.TextColor3 = server and Color3.fromRGB(34, 197, 94) or Color3.fromRGB(239, 68, 68)
-                    end
-                end)
-            end
-        end
-        
-        -- Tu pourras ajouter d'autres commandes ici (ex: Leave, Follow, etc.)
-    end
+    local success, data = pcall(function() return HttpService:JSONDecode(rawMsg) end)
 end
 
 local function SendPlayerInfos(player)
@@ -413,7 +234,7 @@ function connectWS(url)
 end
 
 -- [LANCEUR]
-local serverURL = "wss://m4gix-ws.onrender.com/?username=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
+local serverURL = "wss://m4gix-ws.onrender.com/?role=Admin&user=" .. HttpService:UrlEncode(Players.LocalPlayer.Name)
 task.spawn(function() connectWS(serverURL) end)
 
 -- [INTERFACE GUI]
@@ -489,7 +310,7 @@ local function CreateGUI()
     return statusLabel
 end
 
-guiStatus = CreateGUI()
+local guiStatus = CreateGUI()
 
 -- Mise à jour du statut dans la boucle connectWS
 local originalOnConnect = OnServerConnect

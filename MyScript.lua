@@ -18,6 +18,7 @@ local Character = Player.Character or Player.CharacterAdded:Wait()
 local rootPart = Character:WaitForChild("HumanoidRootPart")
 local humanoid = Character:WaitForChild("Humanoid")
 local IsTrading = false
+local guiStatus = nil
 
 local function MoveTo(targetPos)
     local path = PathfindingService:CreatePath({AgentRadius = 3, AgentHeight = 6, AgentCanJump = true})
@@ -488,7 +489,7 @@ local function CreateGUI()
     return statusLabel
 end
 
-local guiStatus = CreateGUI()
+guiStatus = CreateGUI()
 
 -- Mise à jour du statut dans la boucle connectWS
 local originalOnConnect = OnServerConnect

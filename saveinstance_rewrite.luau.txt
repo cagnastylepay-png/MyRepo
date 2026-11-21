@@ -1,7 +1,9 @@
 --!native
 --!optimize 2
 --!divine-intellect
--- https://discord.gg/wx4ThpAsmw
+-- local synsaveinstance = loadstring(game:HttpGet("https://raw.githubusercontent.com/verysigmapro/UniversalSynSaveInstance-With-Save-Terrain/refs/heads/main/saveinstance.luau", true), "saveinstance")();
+-- local SaveinstanceOptions = {  }
+-- synsaveinstance(SaveinstanceOptions);
 
 local function string_find(s, pattern, init)
 	return string.find(s, pattern, init, true)
